@@ -1,6 +1,6 @@
 # xOctopus Usage Guide
 
-This document is a practical local test guide for xOctopus.
+This document is a practical local usage guide for xOctopus.
 
 xOctopus collects X Web JSON responses through a local browser profile, stores raw responses in SQLite, parses post data, and exports normalized posts as JSONL. It does not use the official X API and does not bypass login, captcha, private accounts, rate limits, or other access controls.
 
@@ -11,7 +11,7 @@ Use Python 3.10 or newer.
 With `uv`:
 
 ```bash
-uv sync --extra dev --extra web
+uv sync --extra web
 uv run playwright install chromium
 ```
 
@@ -24,7 +24,7 @@ Or with `venv` and `pip`:
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -e ".[dev,web]"
+pip install -e ".[web]"
 playwright install chromium
 ```
 
@@ -504,17 +504,3 @@ uv run xoctopus login
 Rate limited:
 
 Increase delays in `config.toml`, reduce `max_pages_per_run`, and wait before retrying.
-
-## 13. Local Development Checks
-
-Run tests:
-
-```bash
-uv run --extra dev python -m pytest -q
-```
-
-Run lint:
-
-```bash
-uv run --extra dev python -m ruff check .
-```

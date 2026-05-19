@@ -28,15 +28,6 @@ pip install "xoctopus[web]"
 playwright install chromium
 ```
 
-## Install For Development
-
-```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -e ".[dev,web]"
-playwright install chromium
-```
-
 ## First Run
 
 ```bash
@@ -48,8 +39,6 @@ xoctopus --version
 ```
 
 For detailed local testing steps, see [USAGE.md](USAGE.md).
-
-For the lightweight local Web UI prototype notes, see [docs/web-prototype.md](docs/web-prototype.md).
 
 ## Core Commands
 
@@ -189,14 +178,4 @@ xOctopus does not bypass private account restrictions, blocks, captchas, paywall
 
 ## Release Notes
 
-Current package version: `0.2.0`.
-
-Before publishing to GitHub, check:
-
-```bash
-./xo --version
-uv run --extra dev --extra web python -m ruff check .
-uv run --extra dev --extra web python -m pytest -q
-uv build
-uv run --extra dev twine check dist/*
-```
+Current package version: `0.2.1`.
