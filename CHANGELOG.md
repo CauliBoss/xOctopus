@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- Expanded the README with a Web-dashboard-first overview and screenshots for Dashboard, Posts, and Sources.
+
 ## 0.2.2
 
 ## 0.2.1
