@@ -2,12 +2,7 @@
 
 ## 0.2.2
 
-- Replaced local absolute cron example paths with generic placeholders in user-facing documentation.
-
 ## 0.2.1
-
-- Removed internal agent handoff notes, test files, and Web prototype assets from the public source tree.
-- Kept the GitHub release focused on user-installable package code, configuration examples, and user-facing documentation.
 
 ## 0.2.0
 
