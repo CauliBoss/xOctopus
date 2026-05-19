@@ -157,7 +157,7 @@ done
 For cron, set `browser.headless = true` in `config.toml` after login works, then add a job like this:
 
 ```cron
-*/30 * * * * cd /home/light/Project/xOctopus && flock -n /tmp/xoctopus.lock ./xo run --once >> data/logs/cron.log 2>&1 && ./xo media download --limit 50 >> data/logs/cron.log 2>&1
+*/30 * * * * cd /path/to/xOctopus && flock -n /tmp/xoctopus.lock ./xo run --once >> data/logs/cron.log 2>&1 && ./xo media download --limit 50 >> data/logs/cron.log 2>&1
 ```
 
 Collected text is stored in SQLite and can be viewed with `./xo posts` or exported:
@@ -178,4 +178,4 @@ xOctopus does not bypass private account restrictions, blocks, captchas, paywall
 
 ## Release Notes
 
-Current package version: `0.2.1`.
+Current package version: `0.2.2`.

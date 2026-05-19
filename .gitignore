@@ -9,8 +9,11 @@ venv/
 .env
 .env.*
 .env.claude
-!.env.claude.example
+.github_token
 .claude/
+AGENT.md
+tests/
+docs/
 dist/
 build/
 

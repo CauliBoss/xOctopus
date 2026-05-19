@@ -240,7 +240,7 @@ headless = true
 Then install a cron job with `crontab -e`:
 
 ```cron
-*/30 * * * * cd /home/light/Project/xOctopus && flock -n /tmp/xoctopus.lock ./xo run --once >> data/logs/cron.log 2>&1 && ./xo media download --limit 50 >> data/logs/cron.log 2>&1
+*/30 * * * * cd /path/to/xOctopus && flock -n /tmp/xoctopus.lock ./xo run --once >> data/logs/cron.log 2>&1 && ./xo media download --limit 50 >> data/logs/cron.log 2>&1
 ```
 
 This example runs every 30 minutes. `flock` prevents overlapping runs if a
