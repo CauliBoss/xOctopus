@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.sources") }}{% endblock %}
+{% block content %}
+<section class="panel source-form">
+  <div class="panel-head">
+    <h2>{{ t("sources.add_title") }}</h2>
+  </div>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/sources/add">
+    <label class="source-value-field">
+      {{ t("sources.value") }}
+      <input name="value" placeholder="OpenAI" required>
+    </label>
+    <label class="source-type-field">
+      {{ t("sources.type") }}
+      <select name="source_type" id="source-type-select">
+        {% for item in source_types %}
+          <option
+            value="{{ item }}"
+            {{ "selected" if item == "user_timeline" else "" }}
+          >{{ item }} - {{ t("sources.type." ~ item) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="source-name-field">
+      {{ t("sources.name") }}
+      <input name="name" placeholder="auto">
+    </label>
+    <label class="source-interval-field">
+      {{ t("sources.interval") }}
+      <input name="poll_interval_seconds" type="number" min="60" value="1800">
+    </label>
+    <label class="check source-enabled-field">
+      <input name="enabled" type="checkbox" value="true" checked>
+      {{ t("sources.enabled") }}
+    </label>
+    <button class="source-submit">Add Source</button>
+  </form>
+</section>
+
+<section class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Value</th>
+        <th>Enabled</th>
+        <th>Interval</th>
+        <th>Last Success</th>
+        <th>Error</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for source in sources %}
+      <tr>
+        <td>{{ source.name }}</td>
+        <td>{{ source.type }}</td>
+        <td>{{ source.value }}</td>
+        <td>{{ "yes" if source.enabled else "no" }}</td>
+        <td>{{ source.poll_interval_seconds }}s</td>
+        <td>{{ source.last_success_at or "" }}</td>
+        <td>{{ source.last_error or "" }}</td>
+        <td>
+          <div class="row-actions">
+            <form method="post" action="/sources/run">
+              <input type="hidden" name="name" value="{{ source.name }}">
+              <button>Run</button>
+            </form>
+            {% if source.enabled %}
+              <form method="post" action="/sources/disable">
+                <input type="hidden" name="name" value="{{ source.name }}">
+                <button>Disable</button>
+              </form>
+            {% else %}
+              <form method="post" action="/sources/enable">
+                <input type="hidden" name="name" value="{{ source.name }}">
+                <button>Enable</button>
+              </form>
+            {% endif %}
+            <form method="post" action="/sources/delete">
+              <input type="hidden" name="name" value="{{ source.name }}">
+              <button class="danger">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No sources configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

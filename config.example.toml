@@ -1,0 +1,41 @@
+[app]
+db_path = "data/xoctopus.sqlite3"
+raw_dir = "data/raw"
+log_dir = "data/logs"
+log_level = "INFO"
+
+[browser]
+# Keep false for first login and troubleshooting. After login is stable,
+# Settings -> Browser collection can switch this to true for silent collection.
+headless = false
+user_data_dir = "data/browser-profile"
+# Use system Chrome/Chromium when Playwright bundled Chromium is unavailable.
+# Examples:
+# channel = "chrome"
+# executable_path = "/usr/bin/google-chrome"
+channel = ""
+executable_path = ""
+slow_mo_ms = 0
+navigation_timeout_ms = 60000
+
+[rate_limit]
+page_delay_min_seconds = 20
+page_delay_max_seconds = 90
+scroll_delay_min_seconds = 3
+scroll_delay_max_seconds = 8
+max_pages_per_run = 20
+pause_on_429 = true
+
+[media]
+enabled = false
+download_images = false
+download_videos = false
+downloader = "gallery-dl"
+cookies_file = ""
+
+[[sources]]
+name = "openai_timeline"
+type = "user_timeline"
+value = "OpenAI"
+enabled = true
+poll_interval_seconds = 1800

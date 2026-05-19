@@ -1,0 +1,9 @@
+<div class="media-row">
+  {% if item.preview_url %}<img src="{{ item.preview_url }}" alt="">{% endif %}
+  <div>
+    <strong>{{ item.media_type or "media" }}</strong>
+    <span>{{ item.download_status }}</span>
+    <a href="https://x.com/{{ item.username or 'i' }}/status/{{ item.x_post_id }}" target="_blank">{{ item.x_post_id }}</a>
+  </div>
+</div>
+

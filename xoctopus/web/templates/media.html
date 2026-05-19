@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.media") }}{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <form method="get" action="/media">
+    <label>Limit <input name="limit" type="number" min="1" max="200" value="{{ limit }}"></label>
+    <label>Type
+      <select name="type">
+        <option value="" {{ "selected" if not media_type else "" }}>All</option>
+        <option value="photo" {{ "selected" if media_type == "photo" else "" }}>Photo</option>
+        <option value="video" {{ "selected" if media_type == "video" else "" }}>Video</option>
+        <option value="animated_gif" {{ "selected" if media_type == "animated_gif" else "" }}>GIF</option>
+      </select>
+    </label>
+    <label class="check"><input name="pending" type="checkbox" value="true" {{ "checked" if pending else "" }}> Pending</label>
+    <button>Apply</button>
+  </form>
+</section>
+
+<section class="media-grid">
+  {% for item in media %}
+    <article class="media-card">
+      {% if item.preview_url %}
+        <img src="{{ item.preview_url }}" alt="">
+      {% else %}
+        <div class="placeholder">{{ item.media_type or "media" }}</div>
+      {% endif %}
+      <div class="media-body">
+        <div class="row"><span class="badge">{{ item.media_type or "media" }}</span><span class="status">{{ item.download_status }}</span></div>
+        <a href="https://x.com/{{ item.username or 'i' }}/status/{{ item.x_post_id }}" target="_blank">{{ item.x_post_id }}</a>
+        <p>{{ item.width or "" }}{% if item.width and item.height %}x{% endif %}{{ item.height or "" }}</p>
+        {% if item.local_path %}<p class="muted">{{ item.local_path }}</p>{% endif %}
+        {% if item.error %}<p class="error">{{ item.error }}</p>{% endif %}
+      </div>
+    </article>
+  {% else %}
+    <p class="empty">No media assets found.</p>
+  {% endfor %}
+</section>
+{% endblock %}

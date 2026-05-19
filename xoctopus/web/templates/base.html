@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xOctopus</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">xOctopus</div>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if active == 'dashboard' else '' }}">{{ t("nav.dashboard") }}</a>
+      <a href="/posts" class="{{ 'active' if active == 'posts' else '' }}">{{ t("nav.posts") }}</a>
+      <a href="/media" class="{{ 'active' if active == 'media' else '' }}">{{ t("nav.media") }}</a>
+      <a href="/sources" class="{{ 'active' if active == 'sources' else '' }}">{{ t("nav.sources") }}</a>
+      <a href="/runs" class="{{ 'active' if active == 'runs' else '' }}">{{ t("nav.runs") }}</a>
+      <a href="/settings" class="{{ 'active' if active == 'settings' else '' }}">{{ t("nav.settings") }}</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">{{ t("app.local_collector") }}</div>
+        <h1>{% block title %}{{ t("nav.dashboard") }}{% endblock %}</h1>
+      </div>
+      <div class="actions">
+        <a class="lang-switch" href="/set-language/{{ 'en' if lang == 'zh' else 'zh' }}">{{ "English" if lang == "zh" else "中文" }}</a>
+      </div>
+    </header>
+
+    <section class="taskbar {{ task.status }}">
+      <strong>{{ t("common.task") }}:</strong>
+      {% if task.status == "idle" %}
+        {{ t("common.idle") }}
+      {% else %}
+        {{ task.name }} · {{ task.status }}
+        {% if task.message %} · {{ task.message }}{% endif %}
+        {% if task.error %} · {{ task.error }}{% endif %}
+      {% endif %}
+    </section>
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

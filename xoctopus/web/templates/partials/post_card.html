@@ -1,0 +1,75 @@
+<article class="post-card">
+  <div class="post-meta">
+    <strong>@{{ post.username or "unknown" }}</strong>
+    <span>{{ post.created_at or "" }}</span>
+  </div>
+  <p>{{ post.text or "" }}</p>
+  <div class="post-foot">
+    <span>reply {{ post.reply_count or 0 }}</span>
+    <span>repost {{ post.repost_count or 0 }}</span>
+    <span>like {{ post.like_count or 0 }}</span>
+    <span>view {{ post.view_count or 0 }}</span>
+    {% if post.media_count %}<span class="badge">{{ post.media_count }} {{ t("common.media") }}</span>{% endif %}
+    <a href="https://x.com/{{ post.username or 'i' }}/status/{{ post.x_post_id }}" target="_blank">{{ t("common.open_on_x") }}</a>
+  </div>
+  {% if post.media_assets %}
+    <details class="media-fold">
+      <summary>
+        <span>{{ post.media_assets|length }} {{ t("common.media") }}</span>
+        <span class="muted">{{ t("posts.expand_media") }}</span>
+      </summary>
+      {% if view == "archive" %}
+        <div class="post-media-list">
+          {% for item in post.media_assets %}
+            {% set local_url = library_url(item.local_path) %}
+            <div class="post-media-item">
+              {% if local_url and item.media_type == "photo" %}
+                <img src="{{ local_url }}" alt="" loading="lazy">
+              {% elif item.preview_url %}
+                <img src="{{ item.preview_url }}" alt="" loading="lazy">
+              {% else %}
+                <div class="media-thumb-placeholder">{{ item.media_type or "media" }}</div>
+              {% endif %}
+              <div class="post-media-meta">
+                <div>
+                  <span class="badge">{{ item.media_type or "media" }}</span>
+                  <span class="status">{{ item.download_status }}</span>
+                </div>
+                <div class="muted">{{ t("posts.size") }}: {{ item.width or "" }}{% if item.width and item.height %}x{% endif %}{{ item.height or "" }}</div>
+                {% if item.local_path %}
+                  <a href="{{ local_url }}" target="_blank">{{ t("posts.local_file") }}</a>
+                  <div class="path">{{ item.local_path }}</div>
+                {% else %}
+                  <a href="{{ item.remote_url or item.preview_url }}" target="_blank">{{ t("posts.remote") }}</a>
+                {% endif %}
+                {% if item.preview_url and item.preview_url != item.remote_url %}
+                  <a href="{{ item.preview_url }}" target="_blank">{{ t("posts.preview") }}</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="reader-media reader-media-count-{{ post.media_assets|length }}">
+          {% for item in post.media_assets %}
+            {% set local_url = library_url(item.local_path) %}
+            <div class="reader-media-item">
+              {% if item.media_type == "video" and local_url %}
+                <video controls preload="metadata" poster="{{ item.preview_url or '' }}" src="{{ local_url }}"></video>
+              {% elif item.media_type == "photo" and local_url %}
+                <img src="{{ local_url }}" alt="" loading="lazy">
+              {% elif item.preview_url %}
+                <a href="{{ item.remote_url or item.preview_url }}" target="_blank">
+                  <img src="{{ item.preview_url }}" alt="" loading="lazy">
+                  {% if item.media_type in ["video", "animated_gif"] %}<span class="play-badge">▶</span>{% endif %}
+                </a>
+              {% else %}
+                <a class="reader-placeholder" href="{{ item.remote_url or '#' }}" target="_blank">{{ item.media_type or "media" }}</a>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </details>
+  {% endif %}
+</article>

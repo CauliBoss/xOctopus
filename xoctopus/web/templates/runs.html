@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.runs") }}{% endblock %}
+{% block content %}
+<section class="panel">
+  {% include "partials/runs_table.html" %}
+</section>
+{% endblock %}

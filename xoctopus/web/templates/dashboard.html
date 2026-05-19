@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ t("nav.dashboard") }}{% endblock %}
+{% block content %}
+<section class="kpis">
+  <div><span>{{ t("nav.sources") }}</span><strong>{{ summary.sources }}</strong></div>
+  <div><span>Raw Events</span><strong>{{ summary.raw_events }}</strong></div>
+  <div><span>{{ t("nav.posts") }}</span><strong>{{ summary.posts }}</strong></div>
+  <div><span>{{ t("nav.media") }}</span><strong>{{ summary.media_assets }}</strong></div>
+  <div><span>{{ t("dashboard.pending_media") }}</span><strong>{{ pending_media|length }}</strong></div>
+</section>
+
+<section class="panel control-panel">
+  <div>
+    <h2>{{ t("scheduler.title") }}</h2>
+    <p class="muted">
+      {{ t("scheduler.status") }}:
+      <strong>{{ t("scheduler.running") if scheduler.active else t("scheduler.stopped") }}</strong>
+      {% if scheduler.next_run_at %} · {{ t("scheduler.next_run") }}: {{ scheduler.next_run_at }}{% endif %}
+      {% if scheduler.message %} · {{ scheduler.message }}{% endif %}
+      {% if scheduler.error %} · {{ scheduler.error }}{% endif %}
+    </p>
+  </div>
+  <div class="control-actions">
+    {% if scheduler.active %}
+      <form method="post" action="/scheduler/stop"><button class="danger">{{ t("scheduler.stop") }}</button></form>
+    {% else %}
+      <form method="post" action="/scheduler/start"><button>{{ t("scheduler.start") }}</button></form>
+    {% endif %}
+    <form method="post" action="/actions/run-once"><button>{{ t("actions.run_once") }}</button></form>
+    <form method="post" action="/actions/download-media"><button>{{ t("actions.download_media") }}</button></form>
+    <form method="post" action="/actions/reparse"><button>{{ t("actions.reparse") }}</button></form>
+    <form method="post" action="/actions/export"><button>{{ t("actions.export") }}</button></form>
+  </div>
+</section>
+
+<section class="grid two">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Recent Posts</h2>
+      <a href="/posts">View all</a>
+    </div>
+    {% for post in posts %}
+      {% include "partials/post_card.html" %}
+    {% else %}
+      <p class="empty">No posts collected yet.</p>
+    {% endfor %}
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Recent Runs</h2>
+        <a href="/runs">View all</a>
+      </div>
+      {% include "partials/runs_table.html" %}
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Pending Media</h2>
+        <a href="/media?pending=true">View all</a>
+      </div>
+      {% for item in pending_media[:4] %}
+        {% include "partials/media_row.html" %}
+      {% else %}
+        <p class="empty">No pending media.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,21 @@
+<table>
+  <thead>
+    <tr><th>ID</th><th>Source</th><th>Status</th><th>Raw</th><th>Posts</th><th>New</th><th>Error</th></tr>
+  </thead>
+  <tbody>
+    {% for run in runs %}
+    <tr>
+      <td>{{ run.id }}</td>
+      <td>{{ run.source_name or "" }}</td>
+      <td><span class="status">{{ run.status }}</span></td>
+      <td>{{ run.raw_event_count }}</td>
+      <td>{{ run.post_count }}</td>
+      <td>{{ run.new_post_count }}</td>
+      <td>{{ run.error or "" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No runs yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+

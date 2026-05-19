@@ -1,0 +1,137 @@
+"""Tiny translation helper for the local Web UI."""
+
+from __future__ import annotations
+
+SUPPORTED_LANGS = {"en", "zh"}
+
+TRANSLATIONS = {
+    "en": {
+        "actions.download_media": "Download Media",
+        "actions.export": "Export JSONL",
+        "actions.reparse": "Reparse",
+        "actions.run_once": "Run Once",
+        "app.local_collector": "Local collector",
+        "common.error": "Error",
+        "common.idle": "idle",
+        "common.media": "Media",
+        "common.open_on_x": "Open on X",
+        "common.save": "Save",
+        "common.status": "Status",
+        "common.task": "Task",
+        "dashboard.pending_media": "Pending Media",
+        "nav.dashboard": "Dashboard",
+        "nav.media": "Media",
+        "nav.posts": "Posts",
+        "nav.runs": "Runs",
+        "nav.settings": "Settings",
+        "nav.sources": "Sources",
+        "posts.local_file": "Local file",
+        "posts.no_posts": "No posts collected yet.",
+        "posts.expand_media": "Click to browse",
+        "posts.filter.has_media": "Has media",
+        "posts.filter.keyword": "Keyword",
+        "posts.filter.username": "Username",
+        "posts.preview": "Preview",
+        "posts.remote": "Remote",
+        "posts.size": "Size",
+        "posts.title": "Posts",
+        "posts.type": "Type",
+        "posts.view.archive": "Archive",
+        "posts.view.reader": "Reader",
+        "settings.title": "Settings",
+        "settings.browser_title": "Browser collection",
+        "settings.headless": "Run collection in headless mode",
+        "settings.headless_help": (
+            "Use this after login is stable. Login still works best in a visible browser."
+        ),
+        "sources.add_title": "Add monitored account",
+        "sources.enabled": "Enabled",
+        "sources.interval": "Interval seconds",
+        "sources.name": "Name",
+        "sources.type": "Type",
+        "sources.type.list": "List URL: collect posts from an X List page.",
+        "sources.type.post": "Post URL: collect one specific post page.",
+        "sources.type.search": "Search: collect live search result posts for a query.",
+        "sources.type.user_media": "User media: collect the account media tab.",
+        "sources.type.user_timeline": "User timeline: collect the account profile timeline.",
+        "sources.value": "Username / value",
+        "scheduler.next_run": "Next run",
+        "scheduler.running": "Running",
+        "scheduler.start": "Start Scheduler",
+        "scheduler.status": "Status",
+        "scheduler.stop": "Stop Scheduler",
+        "scheduler.stopped": "Stopped",
+        "scheduler.title": "Collection controls",
+    },
+    "zh": {
+        "actions.download_media": "下载媒体",
+        "actions.export": "导出 JSONL",
+        "actions.reparse": "重新解析",
+        "actions.run_once": "立即采集",
+        "app.local_collector": "本地采集器",
+        "common.error": "错误",
+        "common.idle": "空闲",
+        "common.media": "媒体",
+        "common.open_on_x": "在 X 打开",
+        "common.save": "保存",
+        "common.status": "状态",
+        "common.task": "任务",
+        "dashboard.pending_media": "待下载媒体",
+        "nav.dashboard": "仪表盘",
+        "nav.media": "媒体",
+        "nav.posts": "帖子",
+        "nav.runs": "运行记录",
+        "nav.settings": "设置",
+        "nav.sources": "监测账号",
+        "posts.local_file": "本地文件",
+        "posts.no_posts": "还没有采集到帖子。",
+        "posts.expand_media": "点击展开浏览",
+        "posts.filter.has_media": "只看有媒体",
+        "posts.filter.keyword": "关键词",
+        "posts.filter.username": "用户名",
+        "posts.preview": "预览",
+        "posts.remote": "远程",
+        "posts.size": "尺寸",
+        "posts.title": "帖子",
+        "posts.type": "类型",
+        "posts.view.archive": "归档模式",
+        "posts.view.reader": "阅读模式",
+        "settings.title": "设置",
+        "settings.browser_title": "浏览器采集",
+        "settings.headless": "采集时使用无头模式",
+        "settings.headless_help": (
+            "建议登录稳定后再开启。登录和异常验证仍然更适合使用可见浏览器处理。"
+        ),
+        "sources.add_title": "添加监测账号",
+        "sources.enabled": "启用",
+        "sources.interval": "轮询间隔（秒）",
+        "sources.name": "名称",
+        "sources.type": "类型",
+        "sources.type.list": "列表 URL：采集一个 X 列表页面里的帖子。",
+        "sources.type.post": "单条帖子 URL：只采集指定的一条帖子页面。",
+        "sources.type.search": "搜索：按关键词采集实时搜索结果里的帖子。",
+        "sources.type.user_media": "账号媒体页：采集该账号媒体页中的图片和视频帖子。",
+        "sources.type.user_timeline": "账号主页时间线：采集该账号主页时间线中的帖子。",
+        "sources.value": "账号 / 采集值",
+        "scheduler.next_run": "下次采集",
+        "scheduler.running": "运行中",
+        "scheduler.start": "启动定时采集",
+        "scheduler.status": "状态",
+        "scheduler.stop": "停止定时采集",
+        "scheduler.stopped": "已停止",
+        "scheduler.title": "采集控制",
+    },
+}
+
+
+def normalize_lang(lang: str | None) -> str:
+    return lang if lang in SUPPORTED_LANGS else "en"
+
+
+def translator(lang: str):
+    lang = normalize_lang(lang)
+
+    def translate(key: str) -> str:
+        return TRANSLATIONS.get(lang, {}).get(key) or TRANSLATIONS["en"].get(key) or key
+
+    return translate

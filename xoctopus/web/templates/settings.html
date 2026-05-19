@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ t("settings.title") }}{% endblock %}
+{% block content %}
+<section class="panel settings">
+  <dl>
+    <dt>Config</dt><dd>{{ config_path }}</dd>
+    <dt>Database</dt><dd>{{ config.app.db_path }}</dd>
+    <dt>Raw directory</dt><dd>{{ config.app.raw_dir }}</dd>
+    <dt>Log directory</dt><dd>{{ config.app.log_dir }}</dd>
+    <dt>Browser profile</dt><dd>{{ config.browser.user_data_dir }}</dd>
+    <dt>Browser executable</dt><dd>{{ config.browser.executable_path or config.browser.channel or "Playwright default" }}</dd>
+    <dt>Headless</dt><dd>{{ config.browser.headless }}</dd>
+  </dl>
+</section>
+
+<section class="panel settings-form">
+  <div class="panel-head">
+    <h2>{{ t("settings.browser_title") }}</h2>
+  </div>
+  <form method="post" action="/settings/browser">
+    <label class="check">
+      <input name="headless" type="checkbox" value="true" {{ "checked" if config.browser.headless else "" }}>
+      {{ t("settings.headless") }}
+    </label>
+    <p class="muted">{{ t("settings.headless_help") }}</p>
+    <button>{{ t("common.save") }}</button>
+  </form>
+</section>
+{% endblock %}

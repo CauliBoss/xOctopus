@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ t("posts.title") }}{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <form method="get" action="/posts">
+    <label>{{ t("posts.filter.username") }} <input name="username" value="{{ username }}"></label>
+    <label>{{ t("posts.filter.keyword") }} <input name="keyword" value="{{ keyword }}"></label>
+    <label class="check">
+      <input name="has_media" type="checkbox" value="true" {{ "checked" if has_media else "" }}>
+      {{ t("posts.filter.has_media") }}
+    </label>
+    <label>Limit <input name="limit" type="number" min="1" max="200" value="{{ limit }}"></label>
+    <label>View
+      <select name="view">
+        <option value="reader" {{ "selected" if view == "reader" else "" }}>{{ t("posts.view.reader") }}</option>
+        <option value="archive" {{ "selected" if view == "archive" else "" }}>{{ t("posts.view.archive") }}</option>
+      </select>
+    </label>
+    <button>Apply</button>
+  </form>
+</section>
+
+<section class="feed">
+  {% for post in posts %}
+    {% include "partials/post_card.html" %}
+  {% else %}
+    <p class="empty">{{ t("posts.no_posts") }}</p>
+  {% endfor %}
+</section>
+{% endblock %}
