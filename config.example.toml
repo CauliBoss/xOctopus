@@ -25,6 +25,22 @@ cookies_file = "data/cookies/x.cookies.json"
 cookies_format = "playwright"
 refresh_cookies = true
 
+# Optional multi-account setup. When omitted, xOctopus creates a default account
+# from [auth]. Sources can bind to an account by setting account = "name".
+# [[accounts]]
+# name = "main"
+# auth_mode = "cookies"
+# cookies_file = "data/accounts/main.cookies.json"
+# cookies_format = "playwright"
+# refresh_cookies = true
+#
+# [[accounts]]
+# name = "research"
+# auth_mode = "cookies"
+# cookies_file = "data/accounts/research.cookies.json"
+# cookies_format = "playwright"
+# refresh_cookies = true
+
 [rate_limit]
 page_delay_min_seconds = 20
 page_delay_max_seconds = 90
@@ -32,6 +48,18 @@ scroll_delay_min_seconds = 3
 scroll_delay_max_seconds = 8
 max_pages_per_run = 20
 pause_on_429 = true
+
+[health]
+# Session health and backoff: record account/source health, back off after
+# limits or repeated failures, and require manual recovery for auth/challenge states.
+enabled = true
+pause_on_auth_required = true
+pause_on_challenge = true
+pause_on_account_warning = true
+backoff_on_rate_limit_seconds = 3600
+backoff_on_no_data_seconds = 900
+max_consecutive_failures = 3
+failure_backoff_seconds = 1800
 
 [media]
 enabled = false
@@ -46,3 +74,4 @@ type = "user_timeline"
 value = "OpenAI"
 enabled = true
 poll_interval_seconds = 1800
+# account = "main"

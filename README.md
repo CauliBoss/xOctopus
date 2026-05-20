@@ -1,24 +1,26 @@
 # xOctopus
 
-xOctopus is a lightweight local collector for X Web content. It reuses your own
-logged-in browser profile or an exported X cookie file, captures X Web JSON
-responses with Playwright, stores data in SQLite, and keeps raw responses for
-later reparsing.
+Local-first X Web archiving for posts, sources, and media.
 
-It is built for local archiving and research workflows where posts are the main
-asset and media files are optional attachments. xOctopus can run as a CLI-only
-tool on servers, or with an optional local Web dashboard.
+xOctopus captures the X Web responses your logged-in browser can already access,
+keeps raw JSON for future reparsing, and lets you inspect everything locally
+through a CLI or Web dashboard. It is designed for researchers, analysts,
+builders, and personal archivists who want a local, inspectable archive without
+running a cloud service or handing credentials to a third party.
 
 ![xOctopus dashboard](assets/screenshots/dashboard.png)
 
 ## Highlights
 
+- Local-first archive: SQLite, local browser profile, local cookie files, local exports
 - `./xo` helper command for local repo usage
 - CLI for scripts, cron, and terminal-only servers
 - Optional local Web dashboard
 - Browser profile login through Playwright
 - Cookie-file login for no-GUI deployments
 - Chrome/Chromium cookie exporter extension
+- Explicit multi-account binding for user-owned login sessions
+- Session health and backoff for auth, challenge, warning, and limit states
 - SQLite storage with portable JSONL export
 - Source management for users, searches, lists, posts, and media pages
 - Per-source collection progress, with `--quiet` for cron
@@ -27,6 +29,34 @@ tool on servers, or with an optional local Web dashboard.
 If you installed xOctopus as a package, use `xoctopus ...` instead of `./xo ...`.
 The examples below use `./xo` because that is the easiest path when running from
 this repository.
+
+## Why xOctopus
+
+### Local-first
+
+Your config, browser profile, cookies, SQLite database, raw responses, media
+library, and JSONL exports stay on your machine.
+
+### Bring your own session
+
+Use a visible browser profile or exported cookies from your own logged-in
+browser. xOctopus does not ask for your password.
+
+### Raw data preserved
+
+Captured X Web JSON responses are kept so parser improvements can reprocess old
+runs without fetching the same pages again.
+
+### CLI and Web UI
+
+Run collection from cron or a terminal, then browse posts, runs, sources, and
+media from the optional local dashboard.
+
+### Session health and backoff
+
+xOctopus records account/source health. When X asks for login, verification, or
+manual review, xOctopus pauses and tells you what to fix. When X returns rate
+limits or repeated failures, xOctopus backs off before retrying.
 
 ## Quick Start
 
@@ -120,6 +150,12 @@ Chromium with your package manager and configure `browser.channel` or
 
 ## Login Methods
 
+| Mode | Best for | How it works |
+| --- | --- | --- |
+| Browser profile | Desktop/local machine | `./xo login` opens a browser and saves the session |
+| Cookie file | No-GUI server | Export cookies with the included browser extension |
+| Explicit account binding | Multiple user-owned sessions | Bind each source to a named account in `config.toml` |
+
 ### Browser Profile
 
 ```bash
@@ -185,6 +221,86 @@ Load it locally:
 The extension only requests cookie access for X/Twitter domains and downloads a
 Playwright-compatible file named `xoctopus-x-cookies.json`.
 
+### Explicit Multi-Account Binding
+
+xOctopus can manage multiple user-owned login sessions and bind each source to a
+specific account. This is for separating legitimate sessions and workflows, not
+for automatically switching accounts to bypass rate limits, challenges, or other
+access controls.
+
+```toml
+[[accounts]]
+name = "main"
+auth_mode = "cookies"
+cookies_file = "data/accounts/main.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+
+[[accounts]]
+name = "research"
+auth_mode = "cookies"
+cookies_file = "data/accounts/research.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+
+[[sources]]
+name = "openai_timeline"
+type = "user_timeline"
+value = "OpenAI"
+account = "main"
+enabled = true
+poll_interval_seconds = 1800
+```
+
+Useful commands:
+
+```bash
+./xo account list
+./xo account status main
+./xo account import-cookies main --file xoctopus-x-cookies.json
+./xo account validate main
+./xo account resume main
+```
+
+## Session Health & Backoff
+
+xOctopus tracks session health without bypassing access controls. It can pause
+or back off accounts and sources after common failure states:
+
+```text
+auth_required
+challenge_required
+account_warning
+rate_limited
+no_data
+```
+
+Configuration:
+
+```toml
+[health]
+enabled = true
+pause_on_auth_required = true
+pause_on_challenge = true
+pause_on_account_warning = true
+backoff_on_rate_limit_seconds = 3600
+backoff_on_no_data_seconds = 900
+max_consecutive_failures = 3
+failure_backoff_seconds = 1800
+```
+
+Inspect and recover:
+
+```bash
+./xo account list
+./xo account status main
+./xo source status
+./xo account resume main
+./xo source resume openai_timeline
+```
+
+xOctopus does not rotate accounts to bypass limits or challenges.
+
 ## Common CLI Commands
 
 ```bash
@@ -194,10 +310,18 @@ Playwright-compatible file named `xoctopus-x-cookies.json`.
 ./xo auth status
 ./xo auth validate
 ./xo auth import-cookies --file xoctopus-x-cookies.json --format playwright
+./xo account list
+./xo account status main
+./xo account import-cookies main --file xoctopus-x-cookies.json
+./xo account validate main
+./xo account resume main
+./xo source status
+./xo source resume openai_timeline
 ./xo source list
 ./xo source add user OpenAI
 ./xo source add search "(AI OR agent) -filter:replies"
 ./xo collect user OpenAI
+./xo collect user OpenAI --account main
 ./xo run --once
 ./xo run --once --quiet
 ./xo run --watch
@@ -256,6 +380,7 @@ config.toml
 data/xoctopus.sqlite3
 data/browser-profile/
 data/cookies/x.cookies.json
+data/accounts/{account}.cookies.json
 data/logs/
 data/raw/
 library/{username}/{post_id}/
@@ -268,8 +393,10 @@ posts can be exported as JSONL.
 
 ## 中文快速说明
 
-xOctopus 是一个本地运行的 X Web 内容采集工具。它不会绕过验证码、风控、
+xOctopus 是一个本地运行的 X Web 内容采集工具。它不会绕过验证码、平台限制、
 私密账号或访问控制，只复用你自己已经登录的浏览器会话或 cookie 文件。
+多个账号场景下，每个采集源需要显式绑定账号；工具不会在风控、限流或验证
+失败后自动切换账号继续采集。
 
 本机有浏览器时：
 
@@ -304,6 +431,18 @@ refresh_cookies = true
 ./xo run --once
 ```
 
+会话健康与退避：
+
+```bash
+./xo account list
+./xo source status
+./xo account resume main
+./xo source resume openai_timeline
+```
+
+xOctopus 会在登录失效、人工验证、账号警告、限流或连续失败时记录健康状态，
+并暂停或退避相关账号/source。它不会自动换号绕过限制或验证。
+
 启动 Web 界面：
 
 ```bash
@@ -318,6 +457,9 @@ http://127.0.0.1:8787
 
 ## Boundaries
 
+
+## Boundaries
+
 xOctopus does not bypass private accounts, paywalls, blocks, captchas, login
 challenges, rate limits, or other access controls. It does not post, like,
 follow, repost, send messages, or otherwise automate account actions.
@@ -325,14 +467,19 @@ follow, repost, send messages, or otherwise automate account actions.
 If X presents a login challenge, captcha, rate limit, or account warning, pause
 collection and resolve it manually in the browser.
 
+For multiple accounts, xOctopus supports explicit account binding. It does not
+automatically rotate accounts after rate limits, challenges, captcha, account
+warnings, or login failures.
+
 ## Status
 
-Current package version: `0.3.1`.
+Current package version: `0.5.0`.
 
 xOctopus is an early MVP. The CLI, Web dashboard, SQLite storage, source
 management, JSONL export, Playwright response capture, raw response storage,
-cookie-file auth, browser cookie exporter, and first-pass timeline/search
-parsing are in place. X Web response shapes change often, so parser coverage
-should be expanded over time with saved raw fixtures.
+cookie-file auth, explicit account binding, browser cookie exporter, session
+health and backoff, and first-pass timeline/search parsing are in place. X Web
+response shapes change often, so parser coverage should be expanded over time
+with saved raw fixtures.
 
 For detailed local usage steps, see [USAGE.md](USAGE.md).

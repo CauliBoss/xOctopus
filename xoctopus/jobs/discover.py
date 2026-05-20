@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from xoctopus.collectors.playwright_x import CollectorResult, collect_source
-from xoctopus.config import Config, SourceConfig
+from xoctopus.config import Config, SourceConfig, get_account
 from xoctopus.storage import db
 
 
@@ -22,10 +22,25 @@ class JobResult:
 ProgressCallback = Callable[[str, SourceConfig, CollectorResult | None, int, int], None]
 
 
-def collect_ad_hoc(config: Config, source_type: str, value: str) -> JobResult:
+def collect_ad_hoc(
+    config: Config,
+    source_type: str,
+    value: str,
+    *,
+    account_name: str | None = None,
+) -> JobResult:
     mapped_type = _map_source_type(source_type)
-    result = collect_source(config, mapped_type, value)
+    account = get_account(config, account_name)
+    result = collect_source(config, mapped_type, value, account=account)
     _record_run(config, None, result)
+    db.update_health_after_run(
+        config.app.db_path,
+        source_id=None,
+        account_name=account.name,
+        status=result.status,
+        error=result.error,
+        health=config.health,
+    )
     return _to_job_result(result)
 
 
@@ -53,13 +68,42 @@ def run_once(config: Config, progress: ProgressCallback | None = None) -> JobRes
         if progress is not None:
             progress("start", source, None, index, total_sources)
         row = source_rows.get(source.name)
+        account = get_account(config, source.account)
+        account_state = db.get_account_state(config.app.db_path, account.name)
+        if db.is_paused(account_state):
+            paused = account_state["paused_until"] or account_state["status"]
+            result = CollectorResult(
+                status="skipped",
+                error=f"account {account.name} paused: {paused}",
+            )
+            if progress is not None:
+                progress("skip", source, result, index, total_sources)
+            continue
+        if row is not None and db.is_paused(row):
+            paused = row["paused_until"] or row["last_status"]
+            result = CollectorResult(
+                status="skipped",
+                error=f"source paused: {paused}",
+            )
+            if progress is not None:
+                progress("skip", source, result, index, total_sources)
+            continue
         result = collect_source(
             config,
             source.type,
             source.value,
             source_id=row["id"] if row else None,
+            account=account,
         )
         _record_run(config, row["id"] if row else None, result)
+        db.update_health_after_run(
+            config.app.db_path,
+            source_id=row["id"] if row else None,
+            account_name=account.name,
+            status=result.status,
+            error=result.error,
+            health=config.health,
+        )
         total_raw += result.raw_event_count
         total_posts += result.post_count
         total_new += result.new_post_count
@@ -85,13 +129,23 @@ def run_source(config: Config, source_name: str) -> JobResult:
         return JobResult(status="paused", error=f"source_not_found: {source_name}")
     source_rows = {row["name"]: row for row in db.list_sources(config.app.db_path)}
     row = source_rows.get(source.name)
+    account = get_account(config, source.account)
     result = collect_source(
         config,
         source.type,
         source.value,
         source_id=row["id"] if row else None,
+        account=account,
     )
     _record_run(config, row["id"] if row else None, result)
+    db.update_health_after_run(
+        config.app.db_path,
+        source_id=row["id"] if row else None,
+        account_name=account.name,
+        status=result.status,
+        error=result.error,
+        health=config.health,
+    )
     return _to_job_result(result)
 
 

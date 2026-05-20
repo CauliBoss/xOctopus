@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import quote
 
 from xoctopus.auth.cookies import X_COOKIE_URLS, load_cookies, save_playwright_cookies
-from xoctopus.config import Config
+from xoctopus.config import AccountConfig, Config, get_account
 from xoctopus.parser.x_timeline import parse_timeline_response
 from xoctopus.storage import db
 
@@ -26,6 +26,13 @@ class CollectorResult:
     post_count: int = 0
     new_post_count: int = 0
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class PageState:
+    status: str | None
+    reason: str | None = None
+    current_url: str | None = None
 
 
 def open_login_browser(config: Config) -> None:
@@ -71,8 +78,10 @@ def collect_source(
     value: str,
     *,
     source_id: int | None = None,
+    account: AccountConfig | None = None,
 ) -> CollectorResult:
     """Collect one source by capturing X Web JSON responses from a browser session."""
+    active_account = account or get_account(config)
     try:
         target_url = source_url(source_type, value)
     except ValueError as exc:
@@ -87,13 +96,15 @@ def collect_source(
 
     captured: list[CapturedResponse] = []
     saw_rate_limit = False
+    saw_auth_required = False
+    saw_challenge = False
 
     try:
         with sync_playwright() as pw:
             browser = None
             context = None
             try:
-                if config.auth.mode == "cookies":
+                if active_account.auth_mode == "cookies":
                     browser = pw.chromium.launch(
                         headless=config.browser.headless,
                         slow_mo=config.browser.slow_mo_ms,
@@ -102,7 +113,7 @@ def collect_source(
                     )
                     context = browser.new_context()
                     context.add_cookies(
-                        load_cookies(config.auth.cookies_file, config.auth.cookies_format)
+                        load_cookies(active_account.cookies_file, active_account.cookies_format)
                     )
                 else:
                     context = pw.chromium.launch_persistent_context(
@@ -115,7 +126,11 @@ def collect_source(
                 page = context.new_page()
 
                 def on_response(response: Any) -> None:
-                    nonlocal saw_rate_limit
+                    nonlocal saw_auth_required, saw_challenge, saw_rate_limit
+                    if response.status == 401:
+                        saw_auth_required = True
+                    if response.status == 403:
+                        saw_challenge = True
                     if response.status == 429:
                         saw_rate_limit = True
                     if not _should_capture_response(response):
@@ -136,6 +151,12 @@ def collect_source(
 
                 page.on("response", on_response)
                 page.goto(target_url, timeout=config.browser.navigation_timeout_ms)
+                state = detect_x_page_state(page)
+                if state.status:
+                    return CollectorResult(
+                        status=state.status,
+                        error=f"{state.reason}; url={state.current_url}",
+                    )
                 _sleep_between(
                     config.rate_limit.page_delay_min_seconds,
                     config.rate_limit.page_delay_max_seconds,
@@ -146,8 +167,17 @@ def collect_source(
                         config.rate_limit.scroll_delay_min_seconds,
                         config.rate_limit.scroll_delay_max_seconds,
                     )
-                if config.auth.mode == "cookies" and config.auth.refresh_cookies:
-                    save_playwright_cookies(config.auth.cookies_file, context.cookies(X_COOKIE_URLS))
+                state = detect_x_page_state(page)
+                if state.status:
+                    return CollectorResult(
+                        status=state.status,
+                        error=f"{state.reason}; url={state.current_url}",
+                    )
+                if active_account.auth_mode == "cookies" and active_account.refresh_cookies:
+                    save_playwright_cookies(
+                        active_account.cookies_file,
+                        context.cookies(X_COOKIE_URLS),
+                    )
             finally:
                 if context is not None:
                     context.close()
@@ -160,6 +190,10 @@ def collect_source(
     except (OSError, ValueError) as exc:
         return CollectorResult(status="paused", error=f"cookie_auth_error: {exc}")
 
+    if saw_auth_required:
+        return CollectorResult(status="auth_required", error="x_returned_http_401")
+    if saw_challenge:
+        return CollectorResult(status="challenge_required", error="x_returned_http_403")
     if saw_rate_limit and config.rate_limit.pause_on_429:
         return CollectorResult(status="rate_limited", error="x_returned_http_429")
     if not captured:
@@ -256,6 +290,36 @@ def _should_capture_response(response: Any) -> bool:
         and ("json" in content_type or "/graphql/" in url or "/i/api/" in url)
         and ("x.com" in url or "twitter.com" in url)
     )
+
+
+def detect_x_page_state(page: Any) -> PageState:
+    current_url = page.url
+    lowered_url = current_url.lower()
+    if "/i/flow/login" in lowered_url or "/login" in lowered_url:
+        return PageState("auth_required", "redirected_to_login", current_url)
+    if "/account/access" in lowered_url:
+        return PageState("challenge_required", "account_access_challenge", current_url)
+    if "/account/suspended" in lowered_url or "/account/locked" in lowered_url:
+        return PageState("account_warning", "account_locked_or_suspended", current_url)
+    try:
+        body = page.locator("body").inner_text(timeout=1000).lower()
+    except Exception:
+        return PageState(None, current_url=current_url)
+    text_checks = [
+        ("auth_required", "sign in to x"),
+        ("auth_required", "log in to x"),
+        ("challenge_required", "verify your identity"),
+        ("challenge_required", "help us keep your account safe"),
+        ("challenge_required", "enter your phone number"),
+        ("account_warning", "account locked"),
+        ("account_warning", "your account is suspended"),
+        ("rate_limited", "rate limit exceeded"),
+        ("rate_limited", "try again later"),
+    ]
+    for status, needle in text_checks:
+        if needle in body:
+            return PageState(status, needle.replace(" ", "_"), current_url)
+    return PageState(None, current_url=current_url)
 
 
 def _browser_launch_options(config: Config) -> dict[str, str]:

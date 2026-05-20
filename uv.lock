@@ -756,7 +756,7 @@ wheels = [
 
 [[package]]
 name = "xoctopus"
-version = "0.3.1"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "playwright" },

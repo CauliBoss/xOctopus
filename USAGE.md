@@ -172,6 +172,70 @@ internal cookie file as Playwright JSON.
 Cookie files can access your X session. Store them like passwords and do not
 commit them to Git.
 
+### Multiple Explicit Accounts
+
+xOctopus can manage multiple user-owned login sessions. Sources must explicitly
+bind to an account; xOctopus does not automatically rotate accounts after rate
+limits, challenges, captcha, account warnings, or login failures.
+
+```toml
+[[accounts]]
+name = "main"
+auth_mode = "cookies"
+cookies_file = "data/accounts/main.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+
+[[sources]]
+name = "openai_timeline"
+type = "user_timeline"
+value = "OpenAI"
+account = "main"
+enabled = true
+poll_interval_seconds = 1800
+```
+
+Account commands:
+
+```bash
+./xo account list
+./xo account status main
+./xo account import-cookies main --file xoctopus-x-cookies.json
+./xo account validate main
+./xo collect user OpenAI --account main
+```
+
+## 3.1. Session Health And Backoff
+
+xOctopus records account/source health and backs off instead of repeatedly
+retrying when it sees login, challenge, account warning, rate limit, no-data, or
+repeated failure states.
+
+```toml
+[health]
+enabled = true
+pause_on_auth_required = true
+pause_on_challenge = true
+pause_on_account_warning = true
+backoff_on_rate_limit_seconds = 3600
+backoff_on_no_data_seconds = 900
+max_consecutive_failures = 3
+failure_backoff_seconds = 1800
+```
+
+Inspect and recover:
+
+```bash
+./xo account list
+./xo account status main
+./xo source status
+./xo account resume main
+./xo source resume openai_timeline
+```
+
+xOctopus does not automatically rotate accounts to bypass limits, challenges, or
+login failures.
+
 ## 4. Configure Sources
 
 View current sources:

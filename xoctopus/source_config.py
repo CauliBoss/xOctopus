@@ -66,6 +66,7 @@ def make_source(
     name: str = "",
     enabled: bool = True,
     poll_interval_seconds: int = 1800,
+    account: str = "",
 ) -> SourceConfig:
     source_type = _normalize_source_type(source_type)
     value = value.strip()
@@ -81,6 +82,7 @@ def make_source(
         value=value.lstrip("@") if source_type in {"user_timeline", "user_media"} else value,
         enabled=enabled,
         poll_interval_seconds=poll_interval_seconds,
+        account=account,
     )
 
 
@@ -119,13 +121,16 @@ def _safe_name(value: str) -> str:
 
 
 def _source_to_dict(source: SourceConfig) -> dict[str, Any]:
-    return {
+    data = {
         "name": source.name,
         "type": source.type,
         "value": source.value,
         "enabled": source.enabled,
         "poll_interval_seconds": source.poll_interval_seconds,
     }
+    if source.account:
+        data["account"] = source.account
+    return data
 
 
 def _load_data(path: Path) -> dict[str, Any]:
@@ -137,13 +142,19 @@ def _load_data(path: Path) -> dict[str, Any]:
 
 def _write_data(path: Path, data: dict[str, Any]) -> None:
     lines = []
-    for section in ["app", "browser", "rate_limit", "media"]:
+    for section in ["app", "browser", "auth", "rate_limit", "health", "media"]:
         if section in data:
             lines.extend(_format_table(section, data[section]))
             lines.append("")
+    for account in data.get("accounts", []):
+        lines.append("[[accounts]]")
+        for key in ["name", "auth_mode", "cookies_file", "cookies_format", "refresh_cookies"]:
+            if key in account:
+                lines.append(f"{key} = {_toml_value(account[key])}")
+        lines.append("")
     for source in data.get("sources", []):
         lines.append("[[sources]]")
-        for key in ["name", "type", "value", "enabled", "poll_interval_seconds"]:
+        for key in ["name", "type", "value", "enabled", "poll_interval_seconds", "account"]:
             if key in source:
                 lines.append(f"{key} = {_toml_value(source[key])}")
         lines.append("")

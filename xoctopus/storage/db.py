@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 
-from xoctopus.config import SourceConfig
+from xoctopus.config import AccountConfig, HealthConfig, SourceConfig
 from xoctopus.parser.schema import ParsedAuthor, ParsedPost, ParseResult
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def utc_now() -> str:
@@ -31,10 +31,59 @@ def connect(db_path: Path) -> sqlite3.Connection:
 def init_db(db_path: Path) -> None:
     with connect(db_path) as conn:
         conn.executescript(SCHEMA_SQL)
+        _migrate(conn)
         conn.execute(
             "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
             ("schema_version", str(SCHEMA_VERSION)),
         )
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(conn, "sources", "account_name", "TEXT")
+    _add_column_if_missing(conn, "sources", "last_status", "TEXT")
+    _add_column_if_missing(conn, "sources", "paused_until", "TEXT")
+    _add_column_if_missing(
+        conn,
+        "sources",
+        "consecutive_failures",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection,
+    table: str,
+    column: str,
+    definition: str,
+) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def sync_accounts(db_path: Path, accounts: Iterable[AccountConfig]) -> None:
+    now = utc_now()
+    with connect(db_path) as conn:
+        for account in accounts:
+            conn.execute(
+                """
+                INSERT INTO accounts (
+                    name, auth_mode, cookies_file, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    auth_mode = excluded.auth_mode,
+                    cookies_file = excluded.cookies_file,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    account.name,
+                    account.auth_mode,
+                    str(account.cookies_file) if account.auth_mode == "cookies" else None,
+                    now,
+                    now,
+                ),
+            )
 
 
 def sync_sources(db_path: Path, sources: Iterable[SourceConfig]) -> None:
@@ -44,14 +93,16 @@ def sync_sources(db_path: Path, sources: Iterable[SourceConfig]) -> None:
             conn.execute(
                 """
                 INSERT INTO sources (
-                    name, type, value, enabled, poll_interval_seconds, created_at, updated_at
+                    name, type, value, enabled, poll_interval_seconds, account_name,
+                    created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     type = excluded.type,
                     value = excluded.value,
                     enabled = excluded.enabled,
                     poll_interval_seconds = excluded.poll_interval_seconds,
+                    account_name = excluded.account_name,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -60,10 +111,21 @@ def sync_sources(db_path: Path, sources: Iterable[SourceConfig]) -> None:
                     source.value,
                     int(source.enabled),
                     source.poll_interval_seconds,
+                    source.account,
                     now,
                     now,
                 ),
             )
+
+
+def list_accounts(db_path: Path) -> list[sqlite3.Row]:
+    with connect(db_path) as conn:
+        return list(conn.execute("SELECT * FROM accounts ORDER BY name"))
+
+
+def get_account_state(db_path: Path, name: str) -> sqlite3.Row | None:
+    with connect(db_path) as conn:
+        return conn.execute("SELECT * FROM accounts WHERE name = ?", (name,)).fetchone()
 
 
 def list_sources(db_path: Path) -> list[sqlite3.Row]:
@@ -399,6 +461,191 @@ def insert_fetch_run(
         return int(cursor.lastrowid)
 
 
+def is_paused(row: sqlite3.Row | None, now: str | None = None) -> bool:
+    if row is None:
+        return False
+    status = row["status"] if "status" in row.keys() else row["last_status"]
+    if status in {"needs_reauth", "manual_action_required"}:
+        return True
+    if not row["paused_until"]:
+        return False
+    return row["paused_until"] > (now or utc_now())
+
+
+def update_health_after_run(
+    db_path: Path,
+    *,
+    source_id: int | None,
+    account_name: str,
+    status: str,
+    error: str | None,
+    health: HealthConfig,
+) -> None:
+    if not health.enabled:
+        return
+    now = utc_now()
+    with connect(db_path) as conn:
+        _update_account_health(conn, account_name, status, error, health, now)
+        if source_id is not None:
+            _update_source_health(conn, source_id, status, error, health, now)
+
+
+def resume_account(db_path: Path, name: str | None = None) -> int:
+    now = utc_now()
+    with connect(db_path) as conn:
+        if name:
+            cursor = conn.execute(
+                """
+                UPDATE accounts
+                SET status = 'unknown', paused_until = NULL, consecutive_failures = 0,
+                    last_error = NULL, updated_at = ?
+                WHERE name = ?
+                """,
+                (now, name),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                UPDATE accounts
+                SET status = 'unknown', paused_until = NULL, consecutive_failures = 0,
+                    last_error = NULL, updated_at = ?
+                """,
+                (now,),
+            )
+        return cursor.rowcount
+
+
+def resume_source(db_path: Path, name: str | None = None) -> int:
+    now = utc_now()
+    with connect(db_path) as conn:
+        if name:
+            cursor = conn.execute(
+                """
+                UPDATE sources
+                SET last_status = NULL, paused_until = NULL, consecutive_failures = 0,
+                    last_error = NULL, updated_at = ?
+                WHERE name = ?
+                """,
+                (now, name),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                UPDATE sources
+                SET last_status = NULL, paused_until = NULL, consecutive_failures = 0,
+                    last_error = NULL, updated_at = ?
+                """,
+                (now,),
+            )
+        return cursor.rowcount
+
+
+def _update_account_health(
+    conn: sqlite3.Connection,
+    account_name: str,
+    status: str,
+    error: str | None,
+    health: HealthConfig,
+    now: str,
+) -> None:
+    row = conn.execute("SELECT * FROM accounts WHERE name = ?", (account_name,)).fetchone()
+    failures = int(row["consecutive_failures"] or 0) if row else 0
+    next_status, paused_until, failures = _next_health_state(status, failures, health, account=True)
+    if status == "success":
+        conn.execute(
+            """
+            UPDATE accounts
+            SET status = ?, last_success_at = ?, last_error = NULL, last_error_at = NULL,
+                paused_until = NULL, consecutive_failures = 0, updated_at = ?
+            WHERE name = ?
+            """,
+            (next_status, now, now, account_name),
+        )
+        return
+    conn.execute(
+        """
+        UPDATE accounts
+        SET status = ?, last_error = ?, last_error_at = ?, paused_until = ?,
+            consecutive_failures = ?, updated_at = ?
+        WHERE name = ?
+        """,
+        (next_status, error or status, now, paused_until, failures, now, account_name),
+    )
+
+
+def _update_source_health(
+    conn: sqlite3.Connection,
+    source_id: int,
+    status: str,
+    error: str | None,
+    health: HealthConfig,
+    now: str,
+) -> None:
+    row = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
+    failures = int(row["consecutive_failures"] or 0) if row else 0
+    next_status, paused_until, failures = _next_health_state(status, failures, health, account=False)
+    if status == "success":
+        conn.execute(
+            """
+            UPDATE sources
+            SET last_status = ?, last_success_at = ?, last_error = NULL, last_error_at = NULL,
+                paused_until = NULL, consecutive_failures = 0, updated_at = ?
+            WHERE id = ?
+            """,
+            (next_status, now, now, source_id),
+        )
+        return
+    conn.execute(
+        """
+        UPDATE sources
+        SET last_status = ?, last_error = ?, last_error_at = ?, paused_until = ?,
+            consecutive_failures = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (next_status, error or status, now, paused_until, failures, now, source_id),
+    )
+
+
+def _next_health_state(
+    status: str,
+    failures: int,
+    health: HealthConfig,
+    *,
+    account: bool,
+) -> tuple[str, str | None, int]:
+    if status == "success":
+        return "healthy", None, 0
+    failures += 1
+    paused_until = None
+    next_status = status
+    if status == "auth_required" and health.pause_on_auth_required:
+        next_status = "needs_reauth"
+    elif status == "challenge_required" and health.pause_on_challenge:
+        next_status = "manual_action_required"
+    elif status == "account_warning" and health.pause_on_account_warning:
+        next_status = "manual_action_required"
+    elif status == "rate_limited":
+        next_status = "backing_off"
+        paused_until = _seconds_from_now(health.backoff_on_rate_limit_seconds)
+    elif status == "no_data" and not account:
+        next_status = "backing_off"
+        paused_until = _seconds_from_now(health.backoff_on_no_data_seconds)
+    if (
+        paused_until is None
+        and health.max_consecutive_failures > 0
+        and failures >= health.max_consecutive_failures
+    ):
+        next_status = "backing_off"
+        paused_until = _seconds_from_now(health.failure_backoff_seconds)
+    return next_status, paused_until, failures
+
+
+def _seconds_from_now(seconds: int) -> str | None:
+    if seconds <= 0:
+        return None
+    return (datetime.now(UTC).replace(microsecond=0) + timedelta(seconds=seconds)).isoformat()
+
+
 def _upsert_authors(
     conn: sqlite3.Connection,
     authors: Iterable[ParsedAuthor],
@@ -620,7 +867,15 @@ def _bool_to_int(value: bool | None) -> int | None:
 
 def status_summary(db_path: Path) -> dict[str, int]:
     with connect(db_path) as conn:
-        tables = ["sources", "raw_events", "authors", "posts", "media_assets", "fetch_runs"]
+        tables = [
+            "accounts",
+            "sources",
+            "raw_events",
+            "authors",
+            "posts",
+            "media_assets",
+            "fetch_runs",
+        ]
         return {
             table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             for table in tables
@@ -651,10 +906,30 @@ CREATE TABLE IF NOT EXISTS sources (
     value TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
     poll_interval_seconds INTEGER NOT NULL DEFAULT 1800,
+    account_name TEXT,
+    last_status TEXT,
+    paused_until TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
     last_seen_post_id TEXT,
     last_success_at TEXT,
     last_error_at TEXT,
     last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    auth_mode TEXT NOT NULL,
+    cookies_file TEXT,
+    status TEXT NOT NULL DEFAULT 'unknown',
+    last_validated_at TEXT,
+    last_success_at TEXT,
+    last_error_at TEXT,
+    last_error TEXT,
+    paused_until TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

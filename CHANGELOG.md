@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+- Added session health and backoff tracking for accounts and sources.
+- Added auth, challenge, account warning, rate limit, no-data, and repeated failure health handling.
+- Added account/source status and resume commands for manual recovery.
+- Added database health state for accounts and configured sources.
+- Documented 会话健康与退避 behavior and boundaries.
+
+## 0.4.0
+
+- Added explicit multi-account configuration for user-owned browser profiles and cookie files.
+- Added source-to-account binding so each source can declare which login account it uses.
+- Added account CLI commands for listing, inspecting, importing cookies, and validating accounts.
+- Updated collection progress output to show the account used by each source.
+- Refined the README around local-first archiving, login modes, and future-safe account boundaries.
+
 ## 0.3.1
 
 - Improved README guidance for `./xo`, cookie login, browser extension setup,

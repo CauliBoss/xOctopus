@@ -19,6 +19,7 @@ from xoctopus.config import (
     DEFAULT_CONFIG_PATH,
     ConfigError,
     ensure_runtime_dirs,
+    get_account,
     init_config,
     load_config,
 )
@@ -39,9 +40,11 @@ app = typer.Typer(help="Lightweight X Web content collector.")
 source_app = typer.Typer(help="Manage configured sources.")
 media_app = typer.Typer(help="Manage captured media assets.")
 auth_app = typer.Typer(help="Manage X login cookies.")
+account_app = typer.Typer(help="Manage configured login accounts.")
 app.add_typer(source_app, name="source")
 app.add_typer(media_app, name="media")
 app.add_typer(auth_app, name="auth")
+app.add_typer(account_app, name="account")
 console = Console()
 
 
@@ -75,6 +78,7 @@ def _load_ready_config(config_path: Path):
     ensure_runtime_dirs(config)
     setup_logging(config.app.log_dir, config.app.log_level)
     db.init_db(config.app.db_path)
+    db.sync_accounts(config.app.db_path, config.accounts)
     db.sync_sources(config.app.db_path, config.sources)
     return config
 
@@ -92,6 +96,7 @@ def init(
         loaded = load_config(config)
         ensure_runtime_dirs(loaded)
         db.init_db(loaded.app.db_path)
+        db.sync_accounts(loaded.app.db_path, loaded.accounts)
         db.sync_sources(loaded.app.db_path, loaded.sources)
     except ConfigError as exc:
         console.print(f"[red]Config error:[/red] {exc}")
@@ -129,6 +134,10 @@ def login(
 def collect(
     source_type: Annotated[str, typer.Argument(help="Source type: user, search, post, list.")],
     value: Annotated[str, typer.Argument(help="Username, query, post URL, or list URL.")],
+    account: Annotated[
+        str | None,
+        typer.Option("--account", help="Configured account name for this ad-hoc collection."),
+    ] = None,
     config: Annotated[
         Path,
         typer.Option("--config", "-c", help="Config path."),
@@ -136,7 +145,7 @@ def collect(
 ) -> None:
     """Collect one ad-hoc source immediately."""
     loaded = _load_ready_config(config)
-    result = collect_ad_hoc(loaded, source_type, value)
+    result = collect_ad_hoc(loaded, source_type, value, account_name=account)
     console.print(
         f"Status: {result.status}; raw events: {result.raw_event_count}; "
         f"posts: {result.post_count}; new posts: {result.new_post_count}"
@@ -204,7 +213,11 @@ def _print_run_start(config) -> None:
 
 def _print_run_progress(event, source, result, index: int, total: int) -> None:
     if event == "start":
-        console.print(f"[{index}/{total}] {source.name} @{source.value}")
+        console.print(f"[{index}/{total}] {source.name} @{source.value} via account {source.account}")
+        return
+    if event == "skip" and result is not None:
+        console.print(f"[{index}/{total}] {source.name} @{source.value} via account {source.account}")
+        console.print(f"  skipped: {result.error or 'paused'}")
         return
     if result is None:
         return
@@ -384,21 +397,78 @@ def source_list(
     table.add_column("Name")
     table.add_column("Type")
     table.add_column("Value")
+    table.add_column("Account")
     table.add_column("Enabled")
+    configured_sources = {source.name: source for source in loaded.sources}
     for source in sources:
+        configured = configured_sources.get(source["name"])
         table.add_row(
             source["name"],
             source["type"],
             source["value"],
+            configured.account if configured else "",
             "yes" if source["enabled"] else "no",
         )
     console.print(table)
+
+
+@source_app.command("status")
+def source_status(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Show source health and backoff state."""
+    loaded = _load_ready_config(config)
+    rows = db.list_sources(loaded.app.db_path)
+    table = Table(title="Source Health")
+    table.add_column("Name")
+    table.add_column("Account")
+    table.add_column("Status")
+    table.add_column("Paused Until")
+    table.add_column("Failures", justify="right")
+    table.add_column("Last Error")
+    for row in rows:
+        table.add_row(
+            row["name"],
+            row["account_name"] or "",
+            row["last_status"] or "-",
+            row["paused_until"] or "-",
+            str(row["consecutive_failures"] or 0),
+            row["last_error"] or "",
+        )
+    console.print(table)
+
+
+@source_app.command("resume")
+def source_resume(
+    name: Annotated[str | None, typer.Argument(help="Source name.")] = None,
+    all_sources: Annotated[
+        bool,
+        typer.Option("--all", help="Resume all sources."),
+    ] = False,
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Clear source health pause/backoff state."""
+    if not name and not all_sources:
+        raise typer.BadParameter("Provide a source name or --all.")
+    loaded = _load_ready_config(config)
+    count = db.resume_source(loaded.app.db_path, None if all_sources else name)
+    console.print(f"Resumed {count} source(s).")
 
 
 @source_app.command("add")
 def source_add(
     source_type: Annotated[str, typer.Argument(help="user, media, search, list, or post.")],
     value: Annotated[str, typer.Argument(help="Username, query, or URL.")],
+    account: Annotated[
+        str,
+        typer.Option("--account", help="Configured account name for this source."),
+    ] = "",
 ) -> None:
     """Print a config snippet for a new source.
 
@@ -408,6 +478,7 @@ def source_add(
     safe_name = "".join(ch if ch.isalnum() else "_" for ch in value).strip("_").lower()
     name = f"{mapped}_{safe_name[:40]}" if safe_name else mapped
     console.print("Add this to config.toml:")
+    account_line = f'account = "{account}"' if account else '# account = "default"'
     snippet = f"""
 [[sources]]
 name = "{name}"
@@ -415,6 +486,7 @@ type = "{mapped}"
 value = "{value}"
 enabled = true
 poll_interval_seconds = 1800
+{account_line}
 """.strip()
     console.print(snippet, markup=False)
 
@@ -434,6 +506,166 @@ def _map_source_type(source_type: str) -> str:
         return aliases[source_type]
     except KeyError as exc:
         raise typer.BadParameter(f"Unsupported source type: {source_type}") from exc
+
+
+@account_app.command("list")
+def account_list(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """List configured login accounts."""
+    loaded = _load_ready_config(config)
+    table = Table(title="Accounts")
+    table.add_column("Name")
+    table.add_column("Mode")
+    table.add_column("Cookie File")
+    table.add_column("Health")
+    table.add_column("Paused Until")
+    table.add_column("Failures", justify="right")
+    table.add_column("Cookie Status")
+    states = {row["name"]: row for row in db.list_accounts(loaded.app.db_path)}
+    for account in loaded.accounts:
+        state = states.get(account.name)
+        status = "-"
+        if account.auth_mode == "cookies":
+            cookie_info = cookie_status(account.cookies_file)
+            if cookie_info.error:
+                status = f"error: {cookie_info.error}"
+            elif not cookie_info.exists:
+                status = "missing"
+            elif cookie_info.likely_logged_in:
+                status = "likely logged in"
+            else:
+                status = "present"
+        table.add_row(
+            account.name,
+            account.auth_mode,
+            str(account.cookies_file) if account.auth_mode == "cookies" else "-",
+            state["status"] if state else "unknown",
+            state["paused_until"] if state and state["paused_until"] else "-",
+            str(state["consecutive_failures"] if state else 0),
+            status,
+        )
+    console.print(table)
+
+
+@account_app.command("status")
+def account_status(
+    name: Annotated[str | None, typer.Argument(help="Account name.")] = None,
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Show one account's local auth status."""
+    loaded = _load_ready_config(config)
+    accounts = [get_account(loaded, name)] if name else loaded.accounts
+    for account in accounts:
+        state = db.get_account_state(loaded.app.db_path, account.name)
+        console.print(f"Account: {account.name}")
+        console.print(f"Auth mode: {account.auth_mode}")
+        if state:
+            console.print(f"Health: {state['status']}")
+            console.print(f"Paused until: {state['paused_until'] or '-'}")
+            console.print(f"Consecutive failures: {state['consecutive_failures'] or 0}")
+            console.print(f"Last error: {state['last_error'] or '-'}")
+        if account.auth_mode != "cookies":
+            console.print("Cookie file: -")
+            continue
+        status = cookie_status(account.cookies_file)
+        console.print(f"Cookie file: {account.cookies_file}")
+        console.print(f"Cookie file exists: {'yes' if status.exists else 'no'}")
+        if status.error:
+            console.print(f"[red]Cookie error:[/red] {status.error}")
+            raise typer.Exit(code=1)
+        if status.exists:
+            console.print(f"Cookie count: {status.count}")
+            console.print(f"Domains: {', '.join(status.domains) if status.domains else '-'}")
+            console.print(f"auth_token: {'yes' if status.has_auth_token else 'no'}")
+            console.print(f"ct0: {'yes' if status.has_ct0 else 'no'}")
+            console.print(f"twid: {'yes' if status.has_twid else 'no'}")
+            console.print(f"Likely logged in: {'yes' if status.likely_logged_in else 'no'}")
+
+
+@account_app.command("import-cookies")
+def account_import_cookies(
+    name: Annotated[str, typer.Argument(help="Account name.")],
+    file: Annotated[Path, typer.Option("--file", "-f", help="Input cookie file.")],
+    format: Annotated[
+        str,
+        typer.Option("--format", help="Input format: playwright or netscape."),
+    ] = "playwright",
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Import X cookies into a configured account."""
+    loaded = _load_ready_config(config)
+    account = get_account(loaded, name)
+    if account.auth_mode != "cookies":
+        raise typer.BadParameter(f"Account {name} does not use cookie auth.")
+    try:
+        count = import_cookies(file, account.cookies_file, format)
+    except (OSError, ValueError) as exc:
+        console.print(f"[red]Cookie import failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Imported {count} X cookies to account {account.name}: {account.cookies_file}")
+
+
+@account_app.command("validate")
+def account_validate(
+    name: Annotated[str, typer.Argument(help="Account name.")],
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Validate one configured account with a headless browser."""
+    loaded = _load_ready_config(config)
+    account = get_account(loaded, name)
+    try:
+        ok, detail = _validate_auth_session(loaded, account=account)
+    except (OSError, RuntimeError, ValueError) as exc:
+        console.print(f"[red]Account validate failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    if ok:
+        db.update_health_after_run(
+            loaded.app.db_path,
+            source_id=None,
+            account_name=account.name,
+            status="success",
+            error=None,
+            health=loaded.health,
+        )
+        console.print(f"[green]Account {account.name}: ok[/green]")
+        console.print(detail)
+        return
+    console.print(f"[red]Account {account.name}: failed[/red]")
+    console.print(detail)
+    raise typer.Exit(code=1)
+
+
+@account_app.command("resume")
+def account_resume(
+    name: Annotated[str | None, typer.Argument(help="Account name.")] = None,
+    all_accounts: Annotated[
+        bool,
+        typer.Option("--all", help="Resume all accounts."),
+    ] = False,
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Clear account health pause/backoff state."""
+    if not name and not all_accounts:
+        raise typer.BadParameter("Provide an account name or --all.")
+    loaded = _load_ready_config(config)
+    count = db.resume_account(loaded.app.db_path, None if all_accounts else name)
+    console.print(f"Resumed {count} account(s).")
 
 
 @auth_app.command("status")
@@ -535,7 +767,7 @@ def auth_validate(
     raise typer.Exit(code=1)
 
 
-def _validate_auth_session(config) -> tuple[bool, str]:
+def _validate_auth_session(config, account=None) -> tuple[bool, str]:
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
         from playwright.sync_api import sync_playwright
@@ -544,11 +776,12 @@ def _validate_auth_session(config) -> tuple[bool, str]:
 
     from xoctopus.collectors.playwright_x import _browser_env, _browser_launch_options
 
+    active_account = account or get_account(config)
     with sync_playwright() as pw:
         browser = None
         context = None
         try:
-            if config.auth.mode == "cookies":
+            if active_account.auth_mode == "cookies":
                 browser = pw.chromium.launch(
                     headless=True,
                     env=_browser_env(config),
@@ -556,7 +789,7 @@ def _validate_auth_session(config) -> tuple[bool, str]:
                 )
                 context = browser.new_context()
                 context.add_cookies(
-                    load_cookies(config.auth.cookies_file, config.auth.cookies_format)
+                    load_cookies(active_account.cookies_file, active_account.cookies_format)
                 )
             else:
                 context = pw.chromium.launch_persistent_context(

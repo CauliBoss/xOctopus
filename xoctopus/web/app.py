@@ -251,6 +251,7 @@ def _load_ready_config():
     config = load_config(_config_path())
     ensure_runtime_dirs(config)
     db.init_db(config.app.db_path)
+    db.sync_accounts(config.app.db_path, config.accounts)
     db.sync_sources(config.app.db_path, config.sources)
     return config
 
