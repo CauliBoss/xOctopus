@@ -40,10 +40,11 @@ For CLI/no-web only, use `pip install -e .` instead.
 Check the CLI:
 
 ```bash
-uv run xoctopus --help
+./xo --help
 ```
 
-If you use an activated virtual environment, run `xoctopus --help` instead.
+If you installed xOctopus as a package or use an activated virtual environment,
+run `xoctopus --help` instead.
 
 This repository also includes a short helper command:
 
@@ -58,7 +59,7 @@ All later `uv run xoctopus ...` examples can be shortened to `./xo ...`.
 Create `config.toml`, runtime directories, and the SQLite database:
 
 ```bash
-uv run xoctopus init
+./xo init
 ```
 
 Short form:
@@ -88,7 +89,7 @@ library/
 Open a persistent Chromium profile:
 
 ```bash
-uv run xoctopus login
+./xo login
 ```
 
 Short form:
@@ -176,7 +177,7 @@ commit them to Git.
 View current sources:
 
 ```bash
-uv run xoctopus source list
+./xo source list
 ```
 
 Short form:
@@ -188,13 +189,13 @@ Short form:
 Generate a config snippet for a user timeline:
 
 ```bash
-uv run xoctopus source add user OpenAI
+./xo source add user OpenAI
 ```
 
 Generate a config snippet for a search:
 
 ```bash
-uv run xoctopus source add search "(AI OR agent) -filter:replies"
+./xo source add search "(AI OR agent) -filter:replies"
 ```
 
 Copy the printed `[[sources]]` block into `config.toml`. Supported source types:
@@ -223,7 +224,7 @@ poll_interval_seconds = 1800
 Collect a single source without editing `config.toml`:
 
 ```bash
-uv run xoctopus collect user OpenAI
+./xo collect user OpenAI
 ```
 
 Short form:
@@ -235,7 +236,7 @@ Short form:
 Collect a configured source pass:
 
 ```bash
-uv run xoctopus run --once
+./xo run --once
 ```
 
 Short form:
@@ -256,7 +257,7 @@ that source's result. Use `--quiet` when you only want the final summary:
 Run continuously:
 
 ```bash
-uv run xoctopus run --watch
+./xo run --watch
 ```
 
 Stop watch mode with Ctrl+C.
@@ -336,7 +337,7 @@ Use smaller media batches if downloads are slow:
 Show table counts and source status:
 
 ```bash
-uv run xoctopus status
+./xo status
 ```
 
 Short form:
@@ -463,7 +464,7 @@ library/{username}/{post_id}/
 Export normalized posts to JSONL:
 
 ```bash
-uv run xoctopus export --format jsonl --output exports/posts.jsonl
+./xo export --format jsonl --output exports/posts.jsonl
 ```
 
 Short form:

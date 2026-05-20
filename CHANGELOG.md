@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Improved README guidance for `./xo`, cookie login, browser extension setup,
+  no-GUI server usage, and Chinese quick-start instructions.
+
 ## 0.3.0
 
 - Added cookie-file authentication for terminal-only and server deployments.

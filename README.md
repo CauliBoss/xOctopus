@@ -1,69 +1,106 @@
 # xOctopus
 
-xOctopus is a lightweight local collector for X Web content. It uses your own
-logged-in browser session or X cookie file, stores captured responses in SQLite, preserves raw
-JSON for later reparsing, and gives you a small Web dashboard for monitoring
-sources, reading posts, and downloading media when needed.
+xOctopus is a lightweight local collector for X Web content. It reuses your own
+logged-in browser profile or an exported X cookie file, captures X Web JSON
+responses with Playwright, stores data in SQLite, and keeps raw responses for
+later reparsing.
 
 It is built for local archiving and research workflows where posts are the main
-asset and media files are optional attachments.
+asset and media files are optional attachments. xOctopus can run as a CLI-only
+tool on servers, or with an optional local Web dashboard.
 
 ![xOctopus dashboard](assets/screenshots/dashboard.png)
 
 ## Highlights
 
-- Optional local Web dashboard for day-to-day use
-- CLI for scripts, cron, and automation
+- `./xo` helper command for local repo usage
+- CLI for scripts, cron, and terminal-only servers
+- Optional local Web dashboard
+- Browser profile login through Playwright
+- Cookie-file login for no-GUI deployments
+- Chrome/Chromium cookie exporter extension
 - SQLite storage with portable JSONL export
 - Source management for users, searches, lists, posts, and media pages
-- Browser-session collection through Playwright
-- Cookie-file auth for terminal-only servers
-- Raw response preservation so parser fixes can run later
-- Optional media download workflow
+- Per-source collection progress, with `--quiet` for cron
 - English and Chinese Web UI labels
 
-## Web Dashboard
+If you installed xOctopus as a package, use `xoctopus ...` instead of `./xo ...`.
+The examples below use `./xo` because that is the easiest path when running from
+this repository.
 
-The Web UI is the easiest way to operate xOctopus. It reuses the same
-`config.toml`, browser profile, SQLite database, and media library as the CLI.
+## Quick Start
 
-Start it locally:
+### A. Browser Profile Login
+
+Use this when the machine running xOctopus has a visible browser.
 
 ```bash
-xoctopus web
+uv sync
+uv run playwright install chromium
+
+./xo init
+./xo login
+./xo run --once
+./xo posts --limit 20
 ```
 
-Then open:
+`./xo login` opens a persistent browser profile. Log in manually, then return to
+the terminal and press Enter. Future collection runs reuse that profile.
+
+### B. Cookie Login For Terminal-Only Servers
+
+Use this when the server has no GUI.
+
+1. On a desktop Chrome/Chromium/Edge browser, load the unpacked extension from
+   `browser-extension/xoctopus-cookie-exporter`.
+2. Open `https://x.com` and log in manually.
+3. Click the xOctopus Cookie Exporter extension.
+4. Confirm `auth_token` and `ct0` show `yes`.
+5. Export `xoctopus-x-cookies.json`.
+6. Move it to the server as `data/cookies/x.cookies.json`.
+
+Set this in `config.toml`:
+
+```toml
+[auth]
+mode = "cookies"
+cookies_file = "data/cookies/x.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+```
+
+Then validate and collect:
+
+```bash
+./xo auth status
+./xo auth validate
+./xo run --once
+```
+
+Cookie files can access your X session. Store them like passwords and do not
+commit them to Git.
+
+### C. Optional Web Dashboard
+
+Install the Web extra and start the local dashboard:
+
+```bash
+uv sync --extra web
+./xo web
+```
+
+Open:
 
 ```text
 http://127.0.0.1:8787
 ```
 
-The dashboard shows collection state, source counts, raw event counts, recent
-posts, recent runs, and pending media. From the first screen you can run one
-collection pass, start or stop the scheduler, download media, reparse saved raw
-responses, and export JSONL.
-
-### Read And Filter Posts
-
-![xOctopus posts](assets/screenshots/posts.png)
-
-The Posts page is a local archive reader. Filter by username, keyword, media
-presence, and result limit. Media stays collapsed by default so text review
-stays fast; switch to archive-style browsing when you want to inspect attached
-images and videos.
-
-### Manage Sources
-
-![xOctopus sources](assets/screenshots/sources.png)
-
-Add monitored accounts, searches, media pages, list URLs, or individual post
-URLs from the Sources page. Each source has its own enabled state and polling
-interval, so high-signal feeds can run more often than slower archives.
+The Web dashboard reuses the same `config.toml`, browser profile, cookie file,
+SQLite database, and media library as the CLI.
 
 ## Install
 
-For CLI-only use:
+For CLI-only use from a package:
 
 ```bash
 pip install xoctopus
@@ -81,91 +118,135 @@ On Linux systems where bundled Chromium is not suitable, install Chrome or
 Chromium with your package manager and configure `browser.channel` or
 `browser.executable_path` in `config.toml`.
 
-## First Run
+## Login Methods
+
+### Browser Profile
 
 ```bash
-xoctopus init
-xoctopus login
-xoctopus run --once
+./xo init
+./xo login
 ```
 
-`xoctopus login` opens a persistent browser profile. Log in manually, then
-return to the terminal. Future collection runs reuse that local browser profile.
+This stores the session under:
 
-For a terminal-only server, export cookies from another desktop browser with
-`browser-extension/xoctopus-cookie-exporter`, upload the downloaded
-`xoctopus-x-cookies.json` as `data/cookies/x.cookies.json`, and set:
-
-```toml
-[auth]
-mode = "cookies"
-cookies_file = "data/cookies/x.cookies.json"
-cookies_format = "playwright"
-refresh_cookies = true
+```text
+data/browser-profile/
 ```
 
-Then check the file and login state:
+You can also export cookies from that profile:
 
 ```bash
-xoctopus auth status
-xoctopus auth validate
+./xo login --export-cookies data/cookies/x.cookies.json
+./xo auth export-cookies --output data/cookies/x.cookies.json
 ```
 
-After login works, add sources in the Web UI or edit `config.toml` directly:
+### Cookie File
 
-```toml
-[[sources]]
-name = "openai_timeline"
-type = "user_timeline"
-value = "OpenAI"
-enabled = true
-poll_interval_seconds = 1800
+xOctopus stores cookie login files in Playwright JSON format:
+
+```text
+data/cookies/x.cookies.json
 ```
 
-Run one pass:
+Import cookies from another extension or tool:
 
 ```bash
-xoctopus run --once
+./xo auth import-cookies --file cookies.txt --format netscape --output data/cookies/x.cookies.json
+./xo auth import-cookies --file xoctopus-x-cookies.json --format playwright
 ```
+
+Check local cookie structure without contacting X:
+
+```bash
+./xo auth status
+```
+
+Validate the real login state with a headless browser:
+
+```bash
+./xo auth validate
+```
+
+### Browser Extension
+
+The included extension lives at:
+
+```text
+browser-extension/xoctopus-cookie-exporter/
+```
+
+Load it locally:
+
+1. Open `chrome://extensions` or the equivalent Edge extensions page.
+2. Enable Developer mode.
+3. Click Load unpacked.
+4. Select `browser-extension/xoctopus-cookie-exporter`.
+
+The extension only requests cookie access for X/Twitter domains and downloads a
+Playwright-compatible file named `xoctopus-x-cookies.json`.
 
 ## Common CLI Commands
 
 ```bash
-xoctopus init
-xoctopus login
-xoctopus login --export-cookies data/cookies/x.cookies.json
-xoctopus auth status
-xoctopus auth import-cookies --file xoctopus-x-cookies.json --format playwright
-xoctopus auth validate
-xoctopus source list
-xoctopus source add user OpenAI
-xoctopus source add search "(AI OR agent) -filter:replies"
-xoctopus collect user OpenAI
-xoctopus run --once
-xoctopus run --once --quiet
-xoctopus run --watch
-xoctopus status
-xoctopus posts --limit 20
-xoctopus media list --pending
-xoctopus media download --limit 50
-xoctopus export --format jsonl --output exports/posts.jsonl
-xoctopus web
+./xo init
+./xo login
+./xo login --export-cookies data/cookies/x.cookies.json
+./xo auth status
+./xo auth validate
+./xo auth import-cookies --file xoctopus-x-cookies.json --format playwright
+./xo source list
+./xo source add user OpenAI
+./xo source add search "(AI OR agent) -filter:replies"
+./xo collect user OpenAI
+./xo run --once
+./xo run --once --quiet
+./xo run --watch
+./xo status
+./xo posts --limit 20
+./xo posts --table --limit 20
+./xo media list --pending
+./xo media download --limit 50
+./xo export --format jsonl --output exports/posts.jsonl
+./xo web
 ```
+
+`./xo run --once` prints per-source progress by default. Use `--quiet` when you
+only want the final summary, such as in cron logs.
 
 For a simple always-on local loop:
 
 ```bash
 while true; do
-  xoctopus run --once
-  xoctopus media download --limit 50
+  ./xo run --once --quiet
+  ./xo media download --limit 50
   sleep 1800
 done
 ```
 
-For cron, set `browser.headless = true` after manual login works:
+For cron, set `browser.headless = true` after login works:
 
 ```cron
-*/30 * * * * cd /path/to/xOctopus && flock -n /tmp/xoctopus.lock xoctopus run --once >> data/logs/cron.log 2>&1 && xoctopus media download --limit 50 >> data/logs/cron.log 2>&1
+*/30 * * * * cd /path/to/xOctopus && flock -n /tmp/xoctopus.lock ./xo run --once --quiet >> data/logs/cron.log 2>&1 && ./xo media download --limit 50 >> data/logs/cron.log 2>&1
+```
+
+## Web Dashboard
+
+![xOctopus posts](assets/screenshots/posts.png)
+
+The Web UI is a local dashboard for source management, collection runs, post
+reading, media browsing, and JSONL export.
+
+![xOctopus sources](assets/screenshots/sources.png)
+
+Available views:
+
+```text
+Dashboard
+Posts
+Media
+Sources
+Runs
+Settings
 ```
 
 ## Data Layout
@@ -185,6 +266,56 @@ Text and metadata live in SQLite. Raw captured responses are retained for later
 parser improvements. Downloaded media is stored under `library/`. Normalized
 posts can be exported as JSONL.
 
+## 中文快速说明
+
+xOctopus 是一个本地运行的 X Web 内容采集工具。它不会绕过验证码、风控、
+私密账号或访问控制，只复用你自己已经登录的浏览器会话或 cookie 文件。
+
+本机有浏览器时：
+
+```bash
+./xo init
+./xo login
+./xo run --once
+./xo posts --limit 20
+```
+
+无 GUI 服务器使用 cookie 登录：
+
+1. 在桌面版 Chrome/Edge 中加载 `browser-extension/xoctopus-cookie-exporter`。
+2. 打开 `https://x.com` 并手动登录。
+3. 用插件导出 `xoctopus-x-cookies.json`。
+4. 上传为 `data/cookies/x.cookies.json`。
+5. 在 `config.toml` 中设置：
+
+```toml
+[auth]
+mode = "cookies"
+cookies_file = "data/cookies/x.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+```
+
+然后执行：
+
+```bash
+./xo auth status
+./xo auth validate
+./xo run --once
+```
+
+启动 Web 界面：
+
+```bash
+./xo web
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:8787
+```
+
 ## Boundaries
 
 xOctopus does not bypass private accounts, paywalls, blocks, captchas, login
@@ -196,11 +327,12 @@ collection and resolve it manually in the browser.
 
 ## Status
 
-Current package version: `0.3.0`.
+Current package version: `0.3.1`.
 
 xOctopus is an early MVP. The CLI, Web dashboard, SQLite storage, source
-management, JSONL export, Playwright response capture, raw response storage, and
-first-pass timeline/search parsing are in place. X Web response shapes change
-often, so parser coverage should be expanded over time with saved raw fixtures.
+management, JSONL export, Playwright response capture, raw response storage,
+cookie-file auth, browser cookie exporter, and first-pass timeline/search
+parsing are in place. X Web response shapes change often, so parser coverage
+should be expanded over time with saved raw fixtures.
 
 For detailed local usage steps, see [USAGE.md](USAGE.md).
