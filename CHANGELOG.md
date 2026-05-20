@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Added cookie-file authentication for terminal-only and server deployments.
+- Added auth CLI commands for cookie status, import, export, and login validation.
+- Added a Chrome/Chromium cookie exporter extension for X/Twitter session cookies.
+- Added per-source progress output for collection runs, with `--quiet` for final summaries only.
+- Clarified CLI/no-web usage while keeping the local Web dashboard as an optional extra.
+
 ## 0.2.3
 
 - Expanded the README with a Web-dashboard-first overview and screenshots for Dashboard, Posts, and Sources.

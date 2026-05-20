@@ -18,6 +18,13 @@ executable_path = ""
 slow_mo_ms = 0
 navigation_timeout_ms = 60000
 
+[auth]
+# profile reuses data/browser-profile. cookies loads a Playwright JSON cookie file.
+mode = "profile"
+cookies_file = "data/cookies/x.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+
 [rate_limit]
 page_delay_min_seconds = 20
 page_delay_max_seconds = 90

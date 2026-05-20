@@ -39,7 +39,9 @@ TRANSLATIONS = {
         "posts.view.archive": "Archive",
         "posts.view.reader": "Reader",
         "settings.title": "Settings",
+        "settings.auth_mode": "Auth mode",
         "settings.browser_title": "Browser collection",
+        "settings.cookie_file": "Cookie file",
         "settings.headless": "Run collection in headless mode",
         "settings.headless_help": (
             "Use this after login is stable. Login still works best in a visible browser."
@@ -97,7 +99,9 @@ TRANSLATIONS = {
         "posts.view.archive": "归档模式",
         "posts.view.reader": "阅读模式",
         "settings.title": "设置",
+        "settings.auth_mode": "登录模式",
         "settings.browser_title": "浏览器采集",
+        "settings.cookie_file": "Cookie 文件",
         "settings.headless": "采集时使用无头模式",
         "settings.headless_help": (
             "建议登录稳定后再开启。登录和异常验证仍然更适合使用可见浏览器处理。"

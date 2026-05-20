@@ -2,13 +2,20 @@
 
 This document is a practical local usage guide for xOctopus.
 
-xOctopus collects X Web JSON responses through a local browser profile, stores raw responses in SQLite, parses post data, and exports normalized posts as JSONL. It does not use the official X API and does not bypass login, captcha, private accounts, rate limits, or other access controls.
+xOctopus collects X Web JSON responses through a local browser profile or an exported X cookie file, stores raw responses in SQLite, parses post data, and exports normalized posts as JSONL. It does not use the official X API and does not bypass login, captcha, private accounts, rate limits, or other access controls.
 
 ## 1. Prepare Environment
 
 Use Python 3.10 or newer.
 
-With `uv`:
+With `uv` for CLI/no-web use:
+
+```bash
+uv sync
+uv run playwright install chromium
+```
+
+With `uv` for the optional Web dashboard:
 
 ```bash
 uv sync --extra web
@@ -27,6 +34,8 @@ python -m venv .venv
 pip install -e ".[web]"
 playwright install chromium
 ```
+
+For CLI/no-web only, use `pip install -e .` instead.
 
 Check the CLI:
 
@@ -64,6 +73,7 @@ Expected local files and directories:
 config.toml
 data/xoctopus.sqlite3
 data/browser-profile/
+data/cookies/
 data/logs/
 data/raw/
 library/
@@ -72,6 +82,8 @@ library/
 `config.toml` is copied from `config.example.toml` the first time. If it already exists, `init` keeps the existing file.
 
 ## 3. Log In To X
+
+### Browser Profile Login
 
 Open a persistent Chromium profile:
 
@@ -99,6 +111,65 @@ browser. After login, collection reuses the same browser profile.
 
 If a third-party login button still says the browser is not secure, use X's
 username/email and password login flow in the opened browser.
+
+You can also export cookies from this profile:
+
+```bash
+./xo login --export-cookies data/cookies/x.cookies.json
+```
+
+Or export later from an existing profile:
+
+```bash
+./xo auth export-cookies --output data/cookies/x.cookies.json
+```
+
+### Cookie File Login For Terminal-Only Servers
+
+Use this when the machine running xOctopus has no GUI.
+
+1. On a desktop browser, open `chrome://extensions`.
+2. Enable Developer mode.
+3. Load `browser-extension/xoctopus-cookie-exporter` as an unpacked extension.
+4. Open `https://x.com` and log in manually.
+5. Click the xOctopus Cookie Exporter extension.
+6. Confirm `auth_token` and `ct0` show `yes`.
+7. Export `xoctopus-x-cookies.json`.
+8. Move it to the server as `data/cookies/x.cookies.json`.
+
+Configure xOctopus:
+
+```toml
+[auth]
+mode = "cookies"
+cookies_file = "data/cookies/x.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+```
+
+Check the local cookie file without contacting X:
+
+```bash
+./xo auth status
+```
+
+Validate the session with a headless browser:
+
+```bash
+./xo auth validate
+```
+
+If you exported cookies with a different browser extension, import them first:
+
+```bash
+./xo auth import-cookies --file cookies.txt --format netscape --output data/cookies/x.cookies.json
+```
+
+Supported import formats are `playwright` and `netscape`. xOctopus stores its
+internal cookie file as Playwright JSON.
+
+Cookie files can access your X session. Store them like passwords and do not
+commit them to Git.
 
 ## 4. Configure Sources
 
@@ -174,6 +245,13 @@ Short form:
 ```
 
 Default `xoctopus run` behavior is the same as `xoctopus run --once`.
+
+By default, `run` prints each enabled source before collection and then prints
+that source's result. Use `--quiet` when you only want the final summary:
+
+```bash
+./xo run --once --quiet
+```
 
 Run continuously:
 

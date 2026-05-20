@@ -22,6 +22,13 @@ from xoctopus.config import (
     init_config,
     load_config,
 )
+from xoctopus.auth.cookies import (
+    X_COOKIE_URLS,
+    cookie_status,
+    export_profile_cookies,
+    import_cookies,
+    load_cookies,
+)
 from xoctopus.jobs.discover import collect_ad_hoc, run_once
 from xoctopus.jobs.media_download import download_pending_media
 from xoctopus.logging import setup_logging
@@ -31,8 +38,10 @@ from xoctopus.storage import db
 app = typer.Typer(help="Lightweight X Web content collector.")
 source_app = typer.Typer(help="Manage configured sources.")
 media_app = typer.Typer(help="Manage captured media assets.")
+auth_app = typer.Typer(help="Manage X login cookies.")
 app.add_typer(source_app, name="source")
 app.add_typer(media_app, name="media")
+app.add_typer(auth_app, name="auth")
 console = Console()
 
 
@@ -101,12 +110,19 @@ def login(
         Path,
         typer.Option("--config", "-c", help="Config path."),
     ] = DEFAULT_CONFIG_PATH,
+    export_cookies: Annotated[
+        Path | None,
+        typer.Option("--export-cookies", help="Export X cookies after manual login."),
+    ] = None,
 ) -> None:
     """Open a persistent browser profile for manual X login."""
     loaded = _load_ready_config(config)
     from xoctopus.collectors.playwright_x import open_login_browser
 
     open_login_browser(loaded)
+    if export_cookies is not None:
+        count = export_profile_cookies(loaded, export_cookies)
+        console.print(f"Exported {count} X cookies to {export_cookies}")
 
 
 @app.command()
@@ -134,6 +150,10 @@ def run(
         bool,
         typer.Option("--watch", help="Run a lightweight scheduler loop."),
     ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", "-q", help="Only print final summaries."),
+    ] = False,
     config: Annotated[
         Path,
         typer.Option("--config", "-c", help="Config path."),
@@ -145,26 +165,56 @@ def run(
 
     loaded = _load_ready_config(config)
     if once:
-        result = run_once(loaded)
+        progress = None if quiet else _print_run_progress
+        if not quiet:
+            _print_run_start(loaded)
+        result = run_once(loaded, progress=progress)
         console.print(
             f"Status: {result.status}; raw events: {result.raw_event_count}; "
             f"posts: {result.post_count}; new posts: {result.new_post_count}"
         )
+        if result.error and not quiet:
+            console.print(f"[yellow]Errors:[/yellow] {result.error}")
         return
 
     console.print("[green]Watching configured sources. Press Ctrl+C to stop.[/green]")
     try:
         while True:
-            result = run_once(loaded)
+            progress = None if quiet else _print_run_progress
+            if not quiet:
+                _print_run_start(loaded)
+            result = run_once(loaded, progress=progress)
             console.print(
                 f"Status: {result.status}; raw events: {result.raw_event_count}; "
                 f"posts: {result.post_count}; new posts: {result.new_post_count}"
             )
+            if result.error and not quiet:
+                console.print(f"[yellow]Errors:[/yellow] {result.error}")
             enabled = [source for source in loaded.sources if source.enabled]
             sleep_seconds = min((s.poll_interval_seconds for s in enabled), default=1800)
             time.sleep(max(30, sleep_seconds))
     except KeyboardInterrupt:
         console.print("Stopped.")
+
+
+def _print_run_start(config) -> None:
+    enabled_sources = [source for source in config.sources if source.enabled]
+    console.print(f"Running {len(enabled_sources)} enabled sources...")
+
+
+def _print_run_progress(event, source, result, index: int, total: int) -> None:
+    if event == "start":
+        console.print(f"[{index}/{total}] {source.name} @{source.value}")
+        return
+    if result is None:
+        return
+    line = (
+        f"  status: {result.status}; raw: {result.raw_event_count}; "
+        f"posts: {result.post_count}; new: {result.new_post_count}"
+    )
+    if result.error:
+        line = f"{line}; error: {result.error}"
+    console.print(line)
 
 
 @app.command()
@@ -384,6 +434,159 @@ def _map_source_type(source_type: str) -> str:
         return aliases[source_type]
     except KeyError as exc:
         raise typer.BadParameter(f"Unsupported source type: {source_type}") from exc
+
+
+@auth_app.command("status")
+def auth_status(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Show local auth configuration and cookie-file status."""
+    loaded = _load_ready_config(config)
+    status = cookie_status(loaded.auth.cookies_file)
+    console.print(f"Auth mode: {loaded.auth.mode}")
+    console.print(f"Cookie file: {loaded.auth.cookies_file}")
+    if not status.exists:
+        console.print("Cookie file exists: no")
+        return
+    console.print("Cookie file exists: yes")
+    if status.error:
+        console.print(f"[red]Cookie error:[/red] {status.error}")
+        raise typer.Exit(code=1)
+    console.print(f"Cookie count: {status.count}")
+    console.print(f"Domains: {', '.join(status.domains) if status.domains else '-'}")
+    console.print(f"auth_token: {'yes' if status.has_auth_token else 'no'}")
+    console.print(f"ct0: {'yes' if status.has_ct0 else 'no'}")
+    console.print(f"twid: {'yes' if status.has_twid else 'no'}")
+    console.print(f"Likely logged in: {'yes' if status.likely_logged_in else 'no'}")
+
+
+@auth_app.command("import-cookies")
+def auth_import_cookies(
+    file: Annotated[Path, typer.Option("--file", "-f", help="Input cookie file.")],
+    format: Annotated[
+        str,
+        typer.Option("--format", help="Input format: playwright or netscape."),
+    ] = "playwright",
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Output Playwright JSON cookie file."),
+    ] = None,
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Import X cookies into xOctopus' Playwright JSON format."""
+    loaded = _load_ready_config(config)
+    target = output or loaded.auth.cookies_file
+    try:
+        count = import_cookies(file, target, format)
+    except (OSError, ValueError) as exc:
+        console.print(f"[red]Cookie import failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Imported {count} X cookies to {target}")
+
+
+@auth_app.command("export-cookies")
+def auth_export_cookies(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Output Playwright JSON cookie file."),
+    ] = None,
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Export X cookies from the configured browser profile."""
+    loaded = _load_ready_config(config)
+    target = output or loaded.auth.cookies_file
+    try:
+        count = export_profile_cookies(loaded, target)
+    except (OSError, RuntimeError) as exc:
+        console.print(f"[red]Cookie export failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Exported {count} X cookies to {target}")
+
+
+@auth_app.command("validate")
+def auth_validate(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="Config path."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Open X with configured auth and report whether the session appears logged in."""
+    loaded = _load_ready_config(config)
+    try:
+        ok, detail = _validate_auth_session(loaded)
+    except (OSError, RuntimeError, ValueError) as exc:
+        console.print(f"[red]Auth validate failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    if ok:
+        console.print("[green]Auth validate: ok[/green]")
+        console.print(detail)
+        return
+    console.print("[red]Auth validate: failed[/red]")
+    console.print(detail)
+    raise typer.Exit(code=1)
+
+
+def _validate_auth_session(config) -> tuple[bool, str]:
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:  # pragma: no cover - depends on local environment
+        raise RuntimeError("Playwright is not installed. Run `playwright install chromium`.") from exc
+
+    from xoctopus.collectors.playwright_x import _browser_env, _browser_launch_options
+
+    with sync_playwright() as pw:
+        browser = None
+        context = None
+        try:
+            if config.auth.mode == "cookies":
+                browser = pw.chromium.launch(
+                    headless=True,
+                    env=_browser_env(config),
+                    **_browser_launch_options(config),
+                )
+                context = browser.new_context()
+                context.add_cookies(
+                    load_cookies(config.auth.cookies_file, config.auth.cookies_format)
+                )
+            else:
+                context = pw.chromium.launch_persistent_context(
+                    user_data_dir=str(config.browser.user_data_dir),
+                    headless=True,
+                    env=_browser_env(config),
+                    **_browser_launch_options(config),
+                )
+            page = context.new_page()
+            try:
+                page.goto("https://x.com/home", timeout=config.browser.navigation_timeout_ms)
+                page.wait_for_load_state(
+                    "domcontentloaded",
+                    timeout=config.browser.navigation_timeout_ms,
+                )
+            except PlaywrightTimeoutError as exc:
+                return False, f"Reason: navigation_timeout: {exc}"
+            current_url = page.url
+            if "/login" in current_url or "/i/flow/login" in current_url:
+                return False, f"Reason: redirected_to_login\nCurrent URL: {current_url}"
+            cookies = context.cookies(X_COOKIE_URLS)
+            names = {cookie.get("name") for cookie in cookies}
+            if "auth_token" in names and "ct0" in names:
+                return True, f"Current URL: {current_url}"
+            return False, f"Reason: missing_auth_cookies\nCurrent URL: {current_url}"
+        finally:
+            if context is not None:
+                context.close()
+            if browser is not None:
+                browser.close()
 
 
 def _post_panel(row) -> Panel:

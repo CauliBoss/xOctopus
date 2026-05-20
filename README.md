@@ -1,7 +1,7 @@
 # xOctopus
 
 xOctopus is a lightweight local collector for X Web content. It uses your own
-logged-in browser session, stores captured responses in SQLite, preserves raw
+logged-in browser session or X cookie file, stores captured responses in SQLite, preserves raw
 JSON for later reparsing, and gives you a small Web dashboard for monitoring
 sources, reading posts, and downloading media when needed.
 
@@ -12,11 +12,12 @@ asset and media files are optional attachments.
 
 ## Highlights
 
-- Local Web dashboard for day-to-day use
+- Optional local Web dashboard for day-to-day use
 - CLI for scripts, cron, and automation
 - SQLite storage with portable JSONL export
 - Source management for users, searches, lists, posts, and media pages
 - Browser-session collection through Playwright
+- Cookie-file auth for terminal-only servers
 - Raw response preservation so parser fixes can run later
 - Optional media download workflow
 - English and Chinese Web UI labels
@@ -62,17 +63,17 @@ interval, so high-signal feeds can run more often than slower archives.
 
 ## Install
 
-For the Web dashboard:
-
-```bash
-pip install "xoctopus[web]"
-playwright install chromium
-```
-
 For CLI-only use:
 
 ```bash
 pip install xoctopus
+playwright install chromium
+```
+
+For the Web dashboard:
+
+```bash
+pip install "xoctopus[web]"
 playwright install chromium
 ```
 
@@ -85,11 +86,30 @@ Chromium with your package manager and configure `browser.channel` or
 ```bash
 xoctopus init
 xoctopus login
-xoctopus web
+xoctopus run --once
 ```
 
 `xoctopus login` opens a persistent browser profile. Log in manually, then
 return to the terminal. Future collection runs reuse that local browser profile.
+
+For a terminal-only server, export cookies from another desktop browser with
+`browser-extension/xoctopus-cookie-exporter`, upload the downloaded
+`xoctopus-x-cookies.json` as `data/cookies/x.cookies.json`, and set:
+
+```toml
+[auth]
+mode = "cookies"
+cookies_file = "data/cookies/x.cookies.json"
+cookies_format = "playwright"
+refresh_cookies = true
+```
+
+Then check the file and login state:
+
+```bash
+xoctopus auth status
+xoctopus auth validate
+```
 
 After login works, add sources in the Web UI or edit `config.toml` directly:
 
@@ -113,18 +133,23 @@ xoctopus run --once
 ```bash
 xoctopus init
 xoctopus login
-xoctopus web
+xoctopus login --export-cookies data/cookies/x.cookies.json
+xoctopus auth status
+xoctopus auth import-cookies --file xoctopus-x-cookies.json --format playwright
+xoctopus auth validate
 xoctopus source list
 xoctopus source add user OpenAI
 xoctopus source add search "(AI OR agent) -filter:replies"
 xoctopus collect user OpenAI
 xoctopus run --once
+xoctopus run --once --quiet
 xoctopus run --watch
 xoctopus status
 xoctopus posts --limit 20
 xoctopus media list --pending
 xoctopus media download --limit 50
 xoctopus export --format jsonl --output exports/posts.jsonl
+xoctopus web
 ```
 
 For a simple always-on local loop:
@@ -149,6 +174,7 @@ For cron, set `browser.headless = true` after manual login works:
 config.toml
 data/xoctopus.sqlite3
 data/browser-profile/
+data/cookies/x.cookies.json
 data/logs/
 data/raw/
 library/{username}/{post_id}/
@@ -170,7 +196,7 @@ collection and resolve it manually in the browser.
 
 ## Status
 
-Current package version: `0.2.3`.
+Current package version: `0.3.0`.
 
 xOctopus is an early MVP. The CLI, Web dashboard, SQLite storage, source
 management, JSONL export, Playwright response capture, raw response storage, and

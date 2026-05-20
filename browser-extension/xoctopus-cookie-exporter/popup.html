@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>xOctopus Cookie Exporter</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <h1>xOctopus Cookie Exporter</h1>
+      <p class="hint">Exports only X/Twitter cookies. The file can access your X session.</p>
+      <dl id="summary">
+        <dt>Cookies</dt><dd id="count">-</dd>
+        <dt>auth_token</dt><dd id="auth-token">-</dd>
+        <dt>ct0</dt><dd id="ct0">-</dd>
+        <dt>twid</dt><dd id="twid">-</dd>
+        <dt>Likely logged in</dt><dd id="logged-in">-</dd>
+      </dl>
+      <button id="export">Export xoctopus-x-cookies.json</button>
+      <p id="status" role="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

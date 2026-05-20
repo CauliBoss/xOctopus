@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "xOctopus Cookie Exporter",
+  "version": "0.1.0",
+  "description": "Export X cookies for xOctopus in Playwright JSON format.",
+  "permissions": ["cookies", "downloads"],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://*.x.com/*",
+    "https://twitter.com/*",
+    "https://*.twitter.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

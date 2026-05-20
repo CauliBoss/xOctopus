@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from xoctopus.collectors.playwright_x import CollectorResult, collect_source
-from xoctopus.config import Config
+from xoctopus.config import Config, SourceConfig
 from xoctopus.storage import db
 
 
@@ -18,6 +19,9 @@ class JobResult:
     error: str | None = None
 
 
+ProgressCallback = Callable[[str, SourceConfig, CollectorResult | None, int, int], None]
+
+
 def collect_ad_hoc(config: Config, source_type: str, value: str) -> JobResult:
     mapped_type = _map_source_type(source_type)
     result = collect_source(config, mapped_type, value)
@@ -25,7 +29,7 @@ def collect_ad_hoc(config: Config, source_type: str, value: str) -> JobResult:
     return _to_job_result(result)
 
 
-def run_once(config: Config) -> JobResult:
+def run_once(config: Config, progress: ProgressCallback | None = None) -> JobResult:
     enabled_sources = [source for source in config.sources if source.enabled]
     if not enabled_sources:
         result = JobResult(status="success")
@@ -44,7 +48,10 @@ def run_once(config: Config) -> JobResult:
     final_status = "success"
 
     source_rows = {row["name"]: row for row in db.list_sources(config.app.db_path)}
-    for source in enabled_sources:
+    total_sources = len(enabled_sources)
+    for index, source in enumerate(enabled_sources, start=1):
+        if progress is not None:
+            progress("start", source, None, index, total_sources)
         row = source_rows.get(source.name)
         result = collect_source(
             config,
@@ -60,6 +67,8 @@ def run_once(config: Config) -> JobResult:
             final_status = result.status
         if result.error:
             errors.append(f"{source.name}: {result.error}")
+        if progress is not None:
+            progress("finish", source, result, index, total_sources)
 
     return JobResult(
         status=final_status,

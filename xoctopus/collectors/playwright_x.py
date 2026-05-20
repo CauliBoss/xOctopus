@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
+from xoctopus.auth.cookies import X_COOKIE_URLS, load_cookies, save_playwright_cookies
 from xoctopus.config import Config
 from xoctopus.parser.x_timeline import parse_timeline_response
 from xoctopus.storage import db
@@ -89,52 +90,75 @@ def collect_source(
 
     try:
         with sync_playwright() as pw:
-            context = pw.chromium.launch_persistent_context(
-                user_data_dir=str(config.browser.user_data_dir),
-                headless=config.browser.headless,
-                slow_mo=config.browser.slow_mo_ms,
-                env=_browser_env(config),
-                **_browser_launch_options(config),
-            )
-            page = context.new_page()
-
-            def on_response(response: Any) -> None:
-                nonlocal saw_rate_limit
-                if response.status == 429:
-                    saw_rate_limit = True
-                if not _should_capture_response(response):
-                    return
-                try:
-                    body = response.json()
-                except Exception:
-                    return
-                if isinstance(body, dict):
-                    captured.append(
-                        CapturedResponse(
-                            page_url=page.url,
-                            request_url=response.url,
-                            status_code=response.status,
-                            body=body,
-                        )
+            browser = None
+            context = None
+            try:
+                if config.auth.mode == "cookies":
+                    browser = pw.chromium.launch(
+                        headless=config.browser.headless,
+                        slow_mo=config.browser.slow_mo_ms,
+                        env=_browser_env(config),
+                        **_browser_launch_options(config),
                     )
+                    context = browser.new_context()
+                    context.add_cookies(
+                        load_cookies(config.auth.cookies_file, config.auth.cookies_format)
+                    )
+                else:
+                    context = pw.chromium.launch_persistent_context(
+                        user_data_dir=str(config.browser.user_data_dir),
+                        headless=config.browser.headless,
+                        slow_mo=config.browser.slow_mo_ms,
+                        env=_browser_env(config),
+                        **_browser_launch_options(config),
+                    )
+                page = context.new_page()
 
-            page.on("response", on_response)
-            page.goto(target_url, timeout=config.browser.navigation_timeout_ms)
-            _sleep_between(
-                config.rate_limit.page_delay_min_seconds,
-                config.rate_limit.page_delay_max_seconds,
-            )
-            for _ in range(max(1, config.rate_limit.max_pages_per_run)):
-                page.mouse.wheel(0, 2400)
+                def on_response(response: Any) -> None:
+                    nonlocal saw_rate_limit
+                    if response.status == 429:
+                        saw_rate_limit = True
+                    if not _should_capture_response(response):
+                        return
+                    try:
+                        body = response.json()
+                    except Exception:
+                        return
+                    if isinstance(body, dict):
+                        captured.append(
+                            CapturedResponse(
+                                page_url=page.url,
+                                request_url=response.url,
+                                status_code=response.status,
+                                body=body,
+                            )
+                        )
+
+                page.on("response", on_response)
+                page.goto(target_url, timeout=config.browser.navigation_timeout_ms)
                 _sleep_between(
-                    config.rate_limit.scroll_delay_min_seconds,
-                    config.rate_limit.scroll_delay_max_seconds,
+                    config.rate_limit.page_delay_min_seconds,
+                    config.rate_limit.page_delay_max_seconds,
                 )
-            context.close()
+                for _ in range(max(1, config.rate_limit.max_pages_per_run)):
+                    page.mouse.wheel(0, 2400)
+                    _sleep_between(
+                        config.rate_limit.scroll_delay_min_seconds,
+                        config.rate_limit.scroll_delay_max_seconds,
+                    )
+                if config.auth.mode == "cookies" and config.auth.refresh_cookies:
+                    save_playwright_cookies(config.auth.cookies_file, context.cookies(X_COOKIE_URLS))
+            finally:
+                if context is not None:
+                    context.close()
+                if browser is not None:
+                    browser.close()
     except PlaywrightTimeoutError as exc:
         return CollectorResult(status="network_error", error=f"navigation_timeout: {exc}")
     except PlaywrightError as exc:
         return CollectorResult(status="network_error", error=str(exc))
+    except (OSError, ValueError) as exc:
+        return CollectorResult(status="paused", error=f"cookie_auth_error: {exc}")
 
     if saw_rate_limit and config.rate_limit.pause_on_429:
         return CollectorResult(status="rate_limited", error="x_returned_http_429")

@@ -10,6 +10,8 @@
     <dt>Browser profile</dt><dd>{{ config.browser.user_data_dir }}</dd>
     <dt>Browser executable</dt><dd>{{ config.browser.executable_path or config.browser.channel or "Playwright default" }}</dd>
     <dt>Headless</dt><dd>{{ config.browser.headless }}</dd>
+    <dt>{{ t("settings.auth_mode") }}</dt><dd>{{ config.auth.mode }}</dd>
+    <dt>{{ t("settings.cookie_file") }}</dt><dd>{{ config.auth.cookies_file }}</dd>
   </dl>
 </section>
 

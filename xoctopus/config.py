@@ -40,6 +40,14 @@ class BrowserConfig:
 
 
 @dataclass(frozen=True)
+class AuthConfig:
+    mode: str
+    cookies_file: Path
+    cookies_format: str
+    refresh_cookies: bool
+
+
+@dataclass(frozen=True)
 class RateLimitConfig:
     page_delay_min_seconds: int
     page_delay_max_seconds: int
@@ -71,6 +79,7 @@ class SourceConfig:
 class Config:
     app: AppConfig
     browser: BrowserConfig
+    auth: AuthConfig
     rate_limit: RateLimitConfig
     media: MediaConfig
     sources: list[SourceConfig]
@@ -103,6 +112,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
 def parse_config(data: dict[str, Any]) -> Config:
     app = data.get("app", {})
     browser = data.get("browser", {})
+    auth = data.get("auth", {})
     rate_limit = data.get("rate_limit", {})
     media = data.get("media", {})
     sources_raw = data.get("sources", [])
@@ -120,6 +130,13 @@ def parse_config(data: dict[str, Any]) -> Config:
             raise ConfigError(f"Unsupported source type: {source.type}")
         sources.append(source)
 
+    auth_mode = str(auth.get("mode", "profile")).strip().lower()
+    if auth_mode not in {"profile", "cookies"}:
+        raise ConfigError(f"Unsupported auth mode: {auth_mode}")
+    cookies_format = str(auth.get("cookies_format", "playwright")).strip().lower()
+    if cookies_format not in {"playwright", "netscape"}:
+        raise ConfigError(f"Unsupported auth cookies format: {cookies_format}")
+
     return Config(
         app=AppConfig(
             db_path=Path(app.get("db_path", "data/xoctopus.sqlite3")),
@@ -134,6 +151,12 @@ def parse_config(data: dict[str, Any]) -> Config:
             executable_path=str(browser.get("executable_path", "")),
             slow_mo_ms=int(browser.get("slow_mo_ms", 0)),
             navigation_timeout_ms=int(browser.get("navigation_timeout_ms", 60000)),
+        ),
+        auth=AuthConfig(
+            mode=auth_mode,
+            cookies_file=Path(auth.get("cookies_file", "data/cookies/x.cookies.json")),
+            cookies_format=cookies_format,
+            refresh_cookies=bool(auth.get("refresh_cookies", True)),
         ),
         rate_limit=RateLimitConfig(
             page_delay_min_seconds=int(rate_limit.get("page_delay_min_seconds", 20)),
@@ -159,6 +182,7 @@ def ensure_runtime_dirs(config: Config) -> None:
     config.app.raw_dir.mkdir(parents=True, exist_ok=True)
     config.app.log_dir.mkdir(parents=True, exist_ok=True)
     config.browser.user_data_dir.mkdir(parents=True, exist_ok=True)
+    config.auth.cookies_file.parent.mkdir(parents=True, exist_ok=True)
     Path("library").mkdir(parents=True, exist_ok=True)
 
 
